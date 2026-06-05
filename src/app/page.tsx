@@ -112,9 +112,10 @@ const renderBodyContent = (bodyText: string, textClassName: string) => {
   return renderParagraphs(bodyText, textClassName);
 };
 
-const MapComponent = ({ leads, onUpdateStatus }: {
+const MapComponent = ({ leads, onUpdateStatus, onPrintMap }: {
   leads: Lead[];
   onUpdateStatus: (id: string, name: string, status: Lead["status"]) => Promise<void>;
+  onPrintMap: () => void;
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
@@ -239,8 +240,8 @@ const MapComponent = ({ leads, onUpdateStatus }: {
     const map = L.map(mapRef.current).setView([centerLat, centerLng], zoomLevel);
     leafletMapRef.current = map;
 
-    // Use CartoDB Dark Matter tiles (to match dark mode Leads theme)
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    // Use CartoDB Positron light tiles
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
       subdomains: 'abcd',
       maxZoom: 20,
@@ -311,28 +312,46 @@ const MapComponent = ({ leads, onUpdateStatus }: {
   };
 
   return (
-    <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-6 h-[85vh] lg:h-[78vh] flex flex-col justify-between">
-      <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-6 h-[85vh] lg:h-[78vh] flex flex-col justify-between map-component-root">
+      {/* Print-only title header */}
+      <div className="hidden print-title-header mb-5 border-b border-zinc-200 pb-3">
+        <h2 className="text-lg font-bold text-zinc-800 font-sans">Delivery Route & Client List</h2>
+        <p className="text-[11px] text-zinc-500 mt-1">Postcode-sorted routing sheet for delivering welcome packages.</p>
+      </div>
+
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
         <div>
           <h3 className="text-lg font-bold text-white tracking-tight font-sans">Monitored Clients Map & Delivery List</h3>
           <p className="text-xs text-slate-400">Showing locations of all leads in &quot;printed&quot; status. Postcode-sorted to optimize your physical delivery route.</p>
         </div>
-        {loadingCoords && (
-          <div className="text-[10px] text-[#35b0f3] font-semibold px-3 py-1 bg-sky-950/40 border border-sky-900/40 rounded-full animate-pulse self-start sm:self-center">
-            Geocoding postcodes...
-          </div>
-        )}
+        <div className="flex gap-2 self-start sm:self-center">
+          {loadingCoords && (
+            <div className="text-[10px] text-[#35b0f3] font-semibold px-3 py-1 bg-sky-950/40 border border-sky-900/40 rounded-full animate-pulse flex items-center">
+              Geocoding postcodes...
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={onPrintMap}
+            className="bg-[#35b0f3] hover:bg-[#35b0f3]/90 text-white font-bold text-xs px-3.5 py-1.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-1.5"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 00-2 2h2m2 4h10a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+            Print Map
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0 overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0 overflow-hidden map-content-layout">
         {/* Numbered List of Deliveries */}
-        <div className="w-full lg:w-80 h-72 lg:h-full flex flex-col bg-slate-950/50 border border-slate-800/80 rounded-xl p-4 overflow-hidden flex-shrink-0">
-          <div className="flex justify-between items-center mb-3 flex-shrink-0">
+        <div className="w-full lg:w-80 h-72 lg:h-full flex flex-col bg-slate-950/50 border border-slate-800/80 rounded-xl p-4 overflow-hidden flex-shrink-0 map-delivery-list">
+          <div className="flex justify-between items-center mb-3 flex-shrink-0 map-delivery-list-header">
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Delivery Route ({listItems.length})</h4>
             <span className="text-[10px] text-slate-500 font-semibold">Postcode Ordered</span>
           </div>
           
-          <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+          <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 delivery-list-scroll-area">
             {listItems.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-4">
                 <svg className="h-8 w-8 text-slate-700 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -344,24 +363,24 @@ const MapComponent = ({ leads, onUpdateStatus }: {
               listItems.map((item) => (
                 <div 
                   key={item.lead.id} 
-                  className={`bg-slate-900/40 border border-slate-850 hover:border-slate-800 rounded-xl p-3 flex gap-3 items-start transition-all duration-150 group ${
+                  className={`bg-slate-900/40 border border-slate-850 hover:border-slate-800 rounded-xl p-3 flex gap-3 items-start transition-all duration-150 group delivery-list-card ${
                     item.coords ? 'cursor-pointer hover:bg-slate-900/80' : 'opacity-75'
                   }`}
                   onClick={() => item.coords && handleFlyTo(item)}
                   title={item.coords ? "Click to focus on map" : "Location not geocoded yet"}
                 >
-                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#35b0f3] text-white flex items-center justify-center text-xs font-black shadow-sm group-hover:scale-105 transition-transform">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#35b0f3] text-white flex items-center justify-center text-xs font-black shadow-sm group-hover:scale-105 transition-transform delivery-list-badge">
                     {item.index + 1}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <h5 className="text-xs font-bold text-white truncate leading-snug mb-1 group-hover:text-[#35b0f3] transition-colors font-sans">
+                    <h5 className="text-xs font-bold text-white truncate leading-snug mb-1 group-hover:text-[#35b0f3] transition-colors font-sans delivery-list-title">
                       {item.lead.name}
                     </h5>
-                    <p className="text-[11px] text-slate-400 leading-normal line-clamp-2 font-sans" title={item.lead.address || ""}>
+                    <p className="text-[11px] text-slate-400 leading-normal line-clamp-2 font-sans delivery-list-address" title={item.lead.address || ""}>
                       {item.lead.address || "No address details available"}
                     </p>
-                    <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-slate-850/50">
-                      <span className="text-[10px] text-slate-300 font-semibold px-2 py-0.5 bg-slate-900 border border-slate-800 rounded font-mono">
+                    <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-slate-850/50 delivery-list-card-footer">
+                      <span className="text-[10px] text-slate-300 font-semibold px-2 py-0.5 bg-slate-900 border border-slate-800 rounded font-mono delivery-list-postcode">
                         {item.lead.postcode || "N/A"}
                       </span>
                       <button
@@ -370,7 +389,7 @@ const MapComponent = ({ leads, onUpdateStatus }: {
                           e.stopPropagation();
                           onUpdateStatus(item.lead.id, item.lead.name, 'delivered');
                         }}
-                        className="bg-emerald-600/15 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/20 hover:border-emerald-500 px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wide transition-all active:scale-95 cursor-pointer"
+                        className="bg-emerald-600/15 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/20 hover:border-emerald-500 px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wide transition-all active:scale-95 cursor-pointer card-action-no-print"
                       >
                         ✓ Delivered
                       </button>
@@ -383,7 +402,7 @@ const MapComponent = ({ leads, onUpdateStatus }: {
         </div>
 
         {/* Map Engine Area */}
-        <div className="flex-1 h-96 lg:h-full relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950">
+        <div className="flex-1 h-96 lg:h-full relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950 map-print-target">
           {leafletLoaded && geocodedItems.length === 0 && (
             <div className="absolute inset-0 z-[400] flex items-center justify-center bg-slate-950/80 text-slate-500 text-sm p-4 text-center">
               No geocoded printed locations to plot. Ensure postcodes are valid.
@@ -405,7 +424,7 @@ export default function Home() {
   // Label Print States
   const [selectedLabelIds, setSelectedLabelIds] = useState<string[]>([]);
   const [isLabelsModalOpen, setIsLabelsModalOpen] = useState(false);
-  const [activePrintType, setActivePrintType] = useState<'letter' | 'labels' | null>(null);
+  const [activePrintType, setActivePrintType] = useState<'letter' | 'labels' | 'map' | null>(null);
 
   // Letter Generator States
   const [selectedLetterLead, setSelectedLetterLead] = useState<Lead | null>(null);
@@ -447,6 +466,14 @@ export default function Home() {
     } finally {
       setLoadingDirector(false);
     }
+  };
+
+  const handlePrintMap = () => {
+    setActivePrintType('map');
+    setTimeout(() => {
+      window.print();
+      setActivePrintType(null);
+    }, 150);
   };
 
   // DB States
@@ -787,7 +814,7 @@ export default function Home() {
   });
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-slate-950 text-slate-100 font-sans">
+    <div className={`flex flex-col md:flex-row min-h-screen bg-slate-950 text-slate-100 font-sans ${activePrintType === 'map' ? 'print-map-mode' : ''}`}>
       
       {/* Toast Alert Banner */}
       {alert && (
@@ -1430,7 +1457,7 @@ export default function Home() {
         )}
 
         {selectedTab === 'map' && (
-          <MapComponent leads={leads} onUpdateStatus={handleUpdateStatus} />
+          <MapComponent leads={leads} onUpdateStatus={handleUpdateStatus} onPrintMap={handlePrintMap} />
         )}
       </main>
 
@@ -1755,7 +1782,7 @@ export default function Home() {
       )}
 
       {/* Print-only container */}
-      {selectedLetterLead && (
+      {selectedLetterLead && activePrintType === 'letter' && (
         <div className="print-container hidden">
           <div className="print-paper bg-white text-zinc-900 p-12 font-sans leading-relaxed text-[14px]">
             <div className="max-w-[620px] mx-auto">
