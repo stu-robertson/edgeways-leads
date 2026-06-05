@@ -51,6 +51,11 @@ body {
 
 /* Print Overrides */
 @media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   /* Enforce block display and scroll overrides for root HTML & Body */
   html, body {
     height: auto !important;
@@ -85,7 +90,7 @@ body {
     border: none !important;
     box-shadow: none !important;
     margin: 0 !important;
-    padding: 2.5cm 2cm !important; /* standard formal margins */
+    padding: 3.0cm 1.5cm !important; /* optimized margins to prevent overflow */
     width: 100% !important;
     color: black !important;
   }
