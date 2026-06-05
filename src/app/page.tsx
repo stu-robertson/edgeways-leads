@@ -37,6 +37,60 @@ interface DiscoveredCompany {
   lead_next_contact_date: string | null;
 }
 
+const renderBodyContent = (bodyText: string, textClassName: string) => {
+  const placeholder = "[Offer Card]";
+  if (bodyText.includes(placeholder)) {
+    const parts = bodyText.split(placeholder);
+    const intro = parts[0] || "";
+    const outro = parts[1] || "";
+    return (
+      <div className="space-y-6">
+        {intro.trim() && (
+          <div className={`whitespace-pre-wrap ${textClassName}`}>{intro.trim()}</div>
+        )}
+        
+        {/* Highlighted Card */}
+        <div className="bg-[#F9F9FA] border border-zinc-200/80 p-6 rounded-[2rem] font-sans shadow-sm w-full">
+          <h3 className="text-sm font-bold text-[#35b0f3] uppercase tracking-wider mb-3.5">
+            New Business Website Offer
+          </h3>
+          
+          <ul className="space-y-2.5 text-[13px] text-zinc-700">
+            <li className="flex items-start gap-2.5">
+              <span className="text-[#35b0f3] font-bold text-sm mt-0.5">✓</span>
+              <span>Professional website</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <span className="text-[#35b0f3] font-bold text-sm mt-0.5">✓</span>
+              <span>Mobile friendly</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <span className="text-[#35b0f3] font-bold text-sm mt-0.5">✓</span>
+              <span>12 months hosting included</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <span className="text-[#35b0f3] font-bold text-sm mt-0.5">✓</span>
+              <span>
+                <strong>£300</strong> <span className="text-zinc-400 font-normal line-through ml-1">instead of £1,200</span>
+              </span>
+            </li>
+          </ul>
+          
+          <div className="mt-4 pt-4 border-t border-zinc-200/80 flex items-center justify-between text-xs">
+            <span className="text-zinc-500 italic">Or pay monthly:</span>
+            <span className="font-bold text-[#35b0f3] text-sm">£25/month for 12 months</span>
+          </div>
+        </div>
+
+        {outro.trim() && (
+          <div className={`whitespace-pre-wrap ${textClassName}`}>{outro.trim()}</div>
+        )}
+      </div>
+    );
+  }
+  return <div className={`whitespace-pre-wrap ${textClassName}`}>{bodyText}</div>;
+};
+
 export default function Home() {
   // Navigation & Filters
   const [selectedTab, setSelectedTab] = useState<'find' | 'crm'>('find');
@@ -1096,40 +1150,60 @@ export default function Home() {
 
               {/* Paper Preview */}
               <div className="w-full md:w-1/2 p-6 bg-slate-950/60 overflow-y-auto flex items-start justify-center">
-                <div className="bg-white text-zinc-900 p-8 sm:p-12 w-full max-w-[210mm] min-h-[297mm] shadow-2xl rounded-sm border border-zinc-200 font-serif leading-relaxed text-sm">
-                  {/* Header info */}
-                  <div className="flex justify-between items-start mb-8 text-xs border-b border-zinc-100 pb-4 text-zinc-500 font-sans">
+                <div className="bg-white text-zinc-900 p-8 sm:p-12 w-full max-w-[620px] shadow-2xl rounded-[2rem] border border-zinc-200 font-sans leading-relaxed text-sm">
+                  {/* Modern Header */}
+                  <div className="flex justify-between items-center mb-10 font-sans">
                     <div>
-                      <strong className="text-sm text-zinc-800 block font-bold">{senderBusinessName}</strong>
-                      <span>{senderWebsite} &bull; {senderPhone}</span>
+                      <h1 className="text-xl font-black tracking-tight text-[#35b0f3] mb-0.5">{senderBusinessName}</h1>
+                      {senderBusinessName === "Edgeways Digital" && (
+                        <p className="text-[9px] uppercase tracking-wider font-semibold text-zinc-400">Software &bull; Websites &bull; Apps</p>
+                      )}
                     </div>
-                    <div className="text-right">
-                      <span>{formatDate(new Date().toISOString())}</span>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <span className="text-[10px] text-zinc-500 font-semibold block">Hi, I&apos;m {senderName.split(' ')[0]}.</span>
+                      </div>
+                      <img src="/stuart.png" className="w-12 h-12 rounded-full object-cover border border-zinc-200 shadow-sm" alt={senderName} />
                     </div>
                   </div>
 
-                  {/* Recipient Address */}
-                  <div className="mb-8 text-xs font-sans text-zinc-700 leading-snug">
-                    <strong className="text-zinc-900 block font-bold mb-1 uppercase tracking-wider text-[10px]">Recipient</strong>
-                    <div className="font-semibold text-zinc-900 text-sm">{selectedLetterLead.name}</div>
-                    {selectedLetterLead.address ? (
-                      <div className="whitespace-pre-wrap mt-0.5 max-w-[280px]">{selectedLetterLead.address}</div>
-                    ) : (
-                      <div className="italic text-zinc-400">Registered Office Address</div>
-                    )}
+                  {/* Date line */}
+                  <div className="text-xs text-zinc-400 font-medium mb-6">
+                    {formatDate(new Date().toISOString())}
+                  </div>
+
+                  {/* Headline & Subheading */}
+                  <div className="mb-8">
+                    <h2 className="text-xl font-extrabold text-[#35b0f3] leading-snug mb-1.5">
+                      Congratulations on starting {selectedLetterLead.name}
+                    </h2>
+                    <p className="text-[13px] text-zinc-500 font-medium">
+                      A quick note from a fellow local business owner.
+                    </p>
                   </div>
 
                   {/* Letter Content */}
-                  <div className="whitespace-pre-wrap text-zinc-800 mb-8 font-serif leading-relaxed text-[13px] tracking-wide">
-                    {letterBody}
-                  </div>
+                  {renderBodyContent(letterBody, "text-[#27272a] text-[13.5px] leading-relaxed")}
 
                   {/* Signature */}
-                  <div className="mt-8 font-sans text-xs text-zinc-650">
-                    <p className="mb-8 font-serif text-[13px] text-zinc-800">Warm regards,</p>
+                  <div className="mt-10 text-xs text-zinc-500 leading-relaxed">
+                    <p className="mb-6 text-zinc-800 text-[13.5px]">Warm regards,</p>
                     <p className="font-bold text-zinc-900 text-sm">{senderName}</p>
-                    <p>{senderBusinessName}</p>
-                    <p className="text-[10px] text-zinc-500 mt-1">{senderEmail} &bull; {senderPhone}</p>
+                    <p className="text-[#35b0f3] font-semibold">{senderBusinessName}</p>
+                  </div>
+
+                  {/* Footer info */}
+                  <div className="mt-12 pt-6 border-t border-zinc-150 text-[9px] text-zinc-400 font-sans tracking-wide flex justify-between items-center">
+                    <div>
+                      <span className="font-semibold text-zinc-500">{senderBusinessName}</span> &bull; 74 Broadlee, Wilnecote, Tamworth, B77 4PG
+                    </div>
+                    <div className="flex gap-2 text-zinc-500">
+                      <span>{senderPhone}</span>
+                      <span>&bull;</span>
+                      <span>{senderEmail}</span>
+                      <span>&bull;</span>
+                      <span>{senderWebsite}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1143,40 +1217,62 @@ export default function Home() {
       {/* Print-only container */}
       {selectedLetterLead && (
         <div className="print-container hidden">
-          <div className="print-paper bg-white text-zinc-900 p-12 font-serif leading-relaxed text-[14px]">
-            {/* Header info */}
-            <div className="flex justify-between items-start mb-12 text-xs border-b border-zinc-200 pb-4 text-zinc-500 font-sans">
-              <div>
-                <strong className="text-base text-zinc-850 block font-bold">{senderBusinessName}</strong>
-                <span>{senderWebsite} &bull; {senderPhone}</span>
+          <div className="print-paper bg-white text-zinc-900 p-12 font-sans leading-relaxed text-[14px]">
+            <div className="max-w-[620px] mx-auto">
+              {/* Modern Header */}
+              <div className="flex justify-between items-center mb-10 font-sans">
+                <div>
+                  <h1 className="text-xl font-black tracking-tight text-[#35b0f3] mb-0.5">{senderBusinessName}</h1>
+                  {senderBusinessName === "Edgeways Digital" && (
+                    <p className="text-[9px] uppercase tracking-wider font-semibold text-zinc-400">Software &bull; Websites &bull; Apps</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <span className="text-[10px] text-zinc-500 font-semibold block">Hi, I&apos;m {senderName.split(' ')[0]}.</span>
+                  </div>
+                  <img src="/stuart.png" className="w-12 h-12 rounded-full object-cover border border-zinc-200 shadow-sm" alt={senderName} />
+                </div>
               </div>
-              <div className="text-right">
-                <span>{formatDate(new Date().toISOString())}</span>
+
+              {/* Date line */}
+              <div className="text-xs text-zinc-405 font-medium mb-6">
+                {formatDate(new Date().toISOString())}
               </div>
-            </div>
 
-            {/* Recipient Address */}
-            <div className="mb-10 text-xs font-sans text-zinc-700 leading-snug">
-              <strong className="text-zinc-900 block font-bold mb-1 uppercase tracking-wider text-[10px]">Recipient</strong>
-              <div className="font-semibold text-zinc-900 text-sm">{selectedLetterLead.name}</div>
-              {selectedLetterLead.address ? (
-                <div className="whitespace-pre-wrap mt-0.5 max-w-[320px]">{selectedLetterLead.address}</div>
-              ) : (
-                <div className="italic text-zinc-400">Registered Office Address</div>
-              )}
-            </div>
+              {/* Headline & Subheading */}
+              <div className="mb-8">
+                <h2 className="text-xl font-extrabold text-[#35b0f3] leading-snug mb-1.5">
+                  Congratulations on starting {selectedLetterLead.name}
+                </h2>
+                <p className="text-[13px] text-zinc-500 font-medium">
+                  A quick note from a fellow local business owner.
+                </p>
+              </div>
 
-            {/* Letter Content */}
-            <div className="whitespace-pre-wrap text-zinc-850 mb-10 font-serif leading-relaxed text-[14px] tracking-wide">
-              {letterBody}
-            </div>
+              {/* Letter Content */}
+              {renderBodyContent(letterBody, "text-[#27272a] text-[14px] leading-relaxed")}
 
-            {/* Signature */}
-            <div className="mt-12 font-sans text-xs text-zinc-650">
-              <p className="mb-12 font-serif text-[14px] text-zinc-800">Warm regards,</p>
-              <p className="font-bold text-zinc-900 text-sm">{senderName}</p>
-              <p>{senderBusinessName}</p>
-              <p className="text-[10px] text-zinc-500 mt-1">{senderEmail} &bull; {senderPhone}</p>
+              {/* Signature */}
+              <div className="mt-10 text-xs text-zinc-500 leading-relaxed">
+                <p className="mb-6 text-zinc-800 text-[14px]">Warm regards,</p>
+                <p className="font-bold text-zinc-900 text-sm">{senderName}</p>
+                <p className="text-[#35b0f3] font-semibold">{senderBusinessName}</p>
+              </div>
+
+              {/* Footer info */}
+              <div className="mt-16 pt-6 border-t border-zinc-150 text-[9px] text-zinc-450 font-sans tracking-wide flex justify-between items-center">
+                <div>
+                  <span className="font-semibold text-zinc-500">{senderBusinessName}</span> &bull; 74 Broadlee, Wilnecote, Tamworth, B77 4PG
+                </div>
+                <div className="flex gap-2 text-zinc-455">
+                  <span>{senderPhone}</span>
+                  <span>&bull;</span>
+                  <span>{senderEmail}</span>
+                  <span>&bull;</span>
+                  <span>{senderWebsite}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
