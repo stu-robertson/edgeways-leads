@@ -8,6 +8,48 @@ const dbPath = path.resolve(process.cwd(), "data.db");
 // Initialize database connection
 const db = new Database(dbPath, { verbose: console.log });
 
+// Migrate status column constraints if leads table exists and has old status values
+try {
+  const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='leads'").get();
+  if (tableCheck) {
+    const schemaRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='leads'").get() as { sql: string } | undefined;
+    if (schemaRow && schemaRow.sql.includes("'contacted'")) {
+      console.log("Migrating database leads table to support new statuses ('printed' and 'delivered')...");
+      db.transaction(() => {
+        db.exec("PRAGMA foreign_keys = OFF");
+        db.exec("ALTER TABLE leads RENAME TO leads_old");
+        db.exec(`
+          CREATE TABLE leads (
+            id TEXT PRIMARY KEY,
+            company_number TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            incorporation_date TEXT NOT NULL,
+            postcode TEXT,
+            address TEXT,
+            sic_codes TEXT,
+            status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'printed', 'delivered', 'interested', 'ignored')),
+            notes TEXT,
+            next_contact_date TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+        `);
+        db.exec(`
+          INSERT INTO leads (id, company_number, name, incorporation_date, postcode, address, sic_codes, status, notes, next_contact_date, created_at)
+          SELECT id, company_number, name, incorporation_date, postcode, address, sic_codes, 
+                 CASE WHEN status = 'contacted' THEN 'delivered' ELSE status END,
+                 notes, next_contact_date, created_at
+          FROM leads_old
+        `);
+        db.exec("DROP TABLE leads_old");
+        db.exec("PRAGMA foreign_keys = ON");
+      })();
+      console.log("Database migration complete!");
+    }
+  }
+} catch (migrationError) {
+  console.error("Failed to run database migration:", migrationError);
+}
+
 // Initialize database tables
 db.exec(`
   CREATE TABLE IF NOT EXISTS watched_locations (
@@ -24,7 +66,7 @@ db.exec(`
     postcode TEXT,
     address TEXT,
     sic_codes TEXT,
-    status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'contacted', 'interested', 'ignored')),
+    status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'printed', 'delivered', 'interested', 'ignored')),
     notes TEXT,
     next_contact_date TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -72,7 +114,7 @@ export interface Lead {
   postcode: string | null;
   address: string | null;
   sic_codes: string | null; // Comma-separated or JSON string
-  status: 'new' | 'contacted' | 'interested' | 'ignored';
+  status: 'new' | 'printed' | 'delivered' | 'interested' | 'ignored';
   notes: string | null;
   next_contact_date: string | null;
   created_at: string;

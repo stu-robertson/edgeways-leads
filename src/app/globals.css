@@ -94,5 +94,49 @@ body {
     width: 100% !important;
     color: black !important;
   }
+
+  /* Label sheet container for A4 */
+  .print-labels-container {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  .print-labels-page {
+    display: grid !important;
+    grid-template-columns: 63.5mm 63.5mm 63.5mm !important;
+    grid-template-rows: repeat(7, 38.1mm) !important;
+    column-gap: 2.5mm !important;
+    row-gap: 0mm !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    padding-top: 15.1mm !important;
+    padding-bottom: 15.2mm !important;
+    padding-left: 7.2mm !important;
+    padding-right: 7.2mm !important;
+    box-sizing: border-box !important;
+    page-break-after: always !important;
+    background: white !important;
+    overflow: hidden !important;
+  }
+  
+  .print-label-cell {
+    width: 63.5mm !important;
+    height: 38.1mm !important;
+    padding: 5mm 6mm !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    font-size: 9.5pt !important;
+    line-height: 1.35 !important;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+    color: black !important;
+    background: white !important;
+  }
 }
 

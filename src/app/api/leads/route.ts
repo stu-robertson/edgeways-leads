@@ -45,7 +45,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Lead ID is required" }, { status: 400 });
     }
     
-    if (status !== undefined && !['new', 'contacted', 'interested', 'ignored'].includes(status)) {
+    if (status !== undefined && !['new', 'printed', 'delivered', 'interested', 'ignored'].includes(status)) {
       return NextResponse.json({ error: "Invalid lead status" }, { status: 400 });
     }
     

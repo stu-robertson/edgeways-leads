@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { defaultLetterTemplate } from "@/lib/templates";
 
 interface WatchedLocation {
@@ -17,7 +17,7 @@ interface Lead {
   postcode: string | null;
   address: string | null;
   sic_codes: string | null;
-  status: 'new' | 'contacted' | 'interested' | 'ignored';
+  status: 'new' | 'printed' | 'delivered' | 'interested' | 'ignored';
   notes: string | null;
   next_contact_date: string | null;
   created_at: string;
@@ -112,11 +112,300 @@ const renderBodyContent = (bodyText: string, textClassName: string) => {
   return renderParagraphs(bodyText, textClassName);
 };
 
+const MapComponent = ({ leads, onUpdateStatus }: {
+  leads: Lead[];
+  onUpdateStatus: (id: string, name: string, status: Lead["status"]) => Promise<void>;
+}) => {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const leafletMapRef = useRef<any>(null);
+  const markersRef = useRef<Record<string, any>>({});
+  const [leafletLoaded, setLeafletLoaded] = useState(false);
+  const [coordinates, setCoordinates] = useState<Record<string, { lat: number; lng: number }>>({});
+  const [loadingCoords, setLoadingCoords] = useState(false);
+
+  // Load Leaflet CSS and JS dynamically
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if ((window as any).L) {
+      setLeafletLoaded(true);
+      return;
+    }
+
+    // Load CSS
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    document.head.appendChild(link);
+
+    // Load JS
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    script.async = true;
+    script.onload = () => {
+      setLeafletLoaded(true);
+    };
+    document.head.appendChild(script);
+  }, []);
+
+  const printedLeads = leads.filter(l => l.status === "printed");
+
+  // Sort them by postcode to group nearby delivery locations
+  const sortedPrintedLeads = [...printedLeads].sort((a, b) => {
+    const pcA = (a.postcode || "").trim().toUpperCase();
+    const pcB = (b.postcode || "").trim().toUpperCase();
+    return pcA.localeCompare(pcB);
+  });
+
+  // Geocode postcodes using api.postcodes.io
+  useEffect(() => {
+    if (sortedPrintedLeads.length === 0) return;
+
+    const geocodeLeads = async () => {
+      setLoadingCoords(true);
+      const newCoords: Record<string, { lat: number; lng: number }> = { ...coordinates };
+      let changed = false;
+
+      for (const lead of sortedPrintedLeads) {
+        if (!lead.postcode) continue;
+        const cleanPostcode = lead.postcode.trim().toUpperCase().replace(/\s+/g, "");
+        if (newCoords[cleanPostcode]) continue;
+
+        try {
+          const res = await fetch(`https://api.postcodes.io/postcodes/${cleanPostcode}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.result) {
+              newCoords[cleanPostcode] = {
+                lat: data.result.latitude,
+                lng: data.result.longitude,
+              };
+              changed = true;
+            }
+          }
+        } catch (err) {
+          console.error(`Failed to geocode postcode ${cleanPostcode}:`, err);
+        }
+      }
+
+      if (changed) {
+        setCoordinates(newCoords);
+      }
+      setLoadingCoords(false);
+    };
+
+    geocodeLeads();
+  }, [leads, sortedPrintedLeads.length]);
+
+  // Build the list of items with coordinates and numbers
+  const listItems = sortedPrintedLeads.map((lead, index) => {
+    const cleanPostcode = lead.postcode?.trim().toUpperCase().replace(/\s+/g, "") || "";
+    const coords = coordinates[cleanPostcode] || null;
+    return { lead, coords, index };
+  });
+
+  const geocodedItems = listItems.filter(item => item.coords);
+
+  // Initialize and update Leaflet Map
+  useEffect(() => {
+    if (!leafletLoaded || !mapRef.current || typeof window === "undefined" || !(window as any).L) return;
+
+    // Destroy existing map instance to re-initialize cleanly
+    if (leafletMapRef.current) {
+      leafletMapRef.current.remove();
+      leafletMapRef.current = null;
+    }
+
+    const L = (window as any).L;
+
+    // Default center: Tamworth/Wilnecote area (or center of all pins)
+    let centerLat = 52.613; // Tamworth latitude
+    let centerLng = -1.683; // Tamworth longitude
+    let zoomLevel = 13;
+
+    if (geocodedItems.length > 0) {
+      const total = geocodedItems.reduce(
+        (acc, val) => ({
+          lat: acc.lat + val.coords!.lat,
+          lng: acc.lng + val.coords!.lng,
+        }),
+        { lat: 0, lng: 0 }
+      );
+      centerLat = total.lat / geocodedItems.length;
+      centerLng = total.lng / geocodedItems.length;
+      zoomLevel = geocodedItems.length === 1 ? 14 : 11;
+    }
+
+    // Initialize Leaflet Map
+    const map = L.map(mapRef.current).setView([centerLat, centerLng], zoomLevel);
+    leafletMapRef.current = map;
+
+    // Use CartoDB Dark Matter tiles (to match dark mode Leads theme)
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 20,
+    }).addTo(map);
+
+    // Clear old markers ref
+    markersRef.current = {};
+
+    // Plot markers
+    geocodedItems.forEach(({ lead, coords, index }) => {
+      const popupContent = `
+        <div style="color: #1e293b; font-family: sans-serif; padding: 4px; min-width: 150px;">
+          <h4 style="margin: 0 0 4px 0; font-weight: bold; font-size: 13px;">${index + 1}. ${lead.name}</h4>
+          <p style="margin: 0 0 6px 0; font-size: 11px; color: #64748b;">Postcode: ${lead.postcode}</p>
+          <p style="margin: 0 0 6px 0; font-size: 10px; color: #475569; max-width: 180px;">${lead.address || ""}</p>
+          <div style="font-size: 11px; margin-top: 6px; border-top: 1px solid #e2e8f0; padding-top: 6px;">
+            <strong>Status:</strong> <span style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px;">${lead.status.toUpperCase()}</span>
+          </div>
+        </div>
+      `;
+
+      // Draw custom numbered marker using L.divIcon
+      const numIcon = L.divIcon({
+        html: `<div style="
+          background-color: #35b0f3;
+          color: #ffffff;
+          border: 2px solid #ffffff;
+          border-radius: 9999px;
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-family: sans-serif;
+          font-size: 11px;
+          font-weight: 800;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.45);
+        ">${index + 1}</div>`,
+        className: 'leaflet-number-marker',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+        popupAnchor: [0, -10]
+      });
+
+      const marker = L.marker([coords!.lat, coords!.lng], { icon: numIcon }).addTo(map);
+      marker.bindPopup(popupContent);
+
+      // Store reference to marker
+      markersRef.current[lead.id] = marker;
+    });
+
+    return () => {
+      if (leafletMapRef.current) {
+        leafletMapRef.current.remove();
+        leafletMapRef.current = null;
+      }
+    };
+  }, [leafletLoaded, coordinates, sortedPrintedLeads.length]);
+
+  const handleFlyTo = (item: typeof listItems[0]) => {
+    if (leafletMapRef.current && item.coords) {
+      leafletMapRef.current.setView([item.coords.lat, item.coords.lng], 15);
+      const marker = markersRef.current[item.lead.id];
+      if (marker) {
+        marker.openPopup();
+      }
+    }
+  };
+
+  return (
+    <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-6 h-[85vh] lg:h-[78vh] flex flex-col justify-between">
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-bold text-white tracking-tight font-sans">Monitored Clients Map & Delivery List</h3>
+          <p className="text-xs text-slate-400">Showing locations of all leads in &quot;printed&quot; status. Postcode-sorted to optimize your physical delivery route.</p>
+        </div>
+        {loadingCoords && (
+          <div className="text-[10px] text-[#35b0f3] font-semibold px-3 py-1 bg-sky-950/40 border border-sky-900/40 rounded-full animate-pulse self-start sm:self-center">
+            Geocoding postcodes...
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0 overflow-hidden">
+        {/* Numbered List of Deliveries */}
+        <div className="w-full lg:w-80 h-72 lg:h-full flex flex-col bg-slate-950/50 border border-slate-800/80 rounded-xl p-4 overflow-hidden flex-shrink-0">
+          <div className="flex justify-between items-center mb-3 flex-shrink-0">
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Delivery Route ({listItems.length})</h4>
+            <span className="text-[10px] text-slate-500 font-semibold">Postcode Ordered</span>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+            {listItems.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-4">
+                <svg className="h-8 w-8 text-slate-700 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                <p className="text-xs text-slate-600 italic">No leads in &quot;printed&quot; status.</p>
+              </div>
+            ) : (
+              listItems.map((item) => (
+                <div 
+                  key={item.lead.id} 
+                  className={`bg-slate-900/40 border border-slate-850 hover:border-slate-800 rounded-xl p-3 flex gap-3 items-start transition-all duration-150 group ${
+                    item.coords ? 'cursor-pointer hover:bg-slate-900/80' : 'opacity-75'
+                  }`}
+                  onClick={() => item.coords && handleFlyTo(item)}
+                  title={item.coords ? "Click to focus on map" : "Location not geocoded yet"}
+                >
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#35b0f3] text-white flex items-center justify-center text-xs font-black shadow-sm group-hover:scale-105 transition-transform">
+                    {item.index + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <h5 className="text-xs font-bold text-white truncate leading-snug mb-1 group-hover:text-[#35b0f3] transition-colors font-sans">
+                      {item.lead.name}
+                    </h5>
+                    <p className="text-[11px] text-slate-400 leading-normal line-clamp-2 font-sans" title={item.lead.address || ""}>
+                      {item.lead.address || "No address details available"}
+                    </p>
+                    <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-slate-850/50">
+                      <span className="text-[10px] text-slate-300 font-semibold px-2 py-0.5 bg-slate-900 border border-slate-800 rounded font-mono">
+                        {item.lead.postcode || "N/A"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onUpdateStatus(item.lead.id, item.lead.name, 'delivered');
+                        }}
+                        className="bg-emerald-600/15 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/20 hover:border-emerald-500 px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wide transition-all active:scale-95 cursor-pointer"
+                      >
+                        ✓ Delivered
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Map Engine Area */}
+        <div className="flex-1 h-96 lg:h-full relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950">
+          {leafletLoaded && geocodedItems.length === 0 && (
+            <div className="absolute inset-0 z-[400] flex items-center justify-center bg-slate-950/80 text-slate-500 text-sm p-4 text-center">
+              No geocoded printed locations to plot. Ensure postcodes are valid.
+            </div>
+          )}
+          <div ref={mapRef} className="w-full h-full" style={{ minHeight: "350px" }} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function Home() {
   // Navigation & Filters
-  const [selectedTab, setSelectedTab] = useState<'find' | 'crm'>('find');
+  const [selectedTab, setSelectedTab] = useState<'find' | 'crm' | 'map'>('find');
   const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | '7days' | '30days'>('7days');
-  const [crmStatusFilter, setCrmStatusFilter] = useState<'all' | 'new' | 'contacted' | 'interested' | 'ignored'>('all');
+  const [crmStatusFilter, setCrmStatusFilter] = useState<'all' | 'new' | 'printed' | 'delivered' | 'interested' | 'ignored'>('all');
+
+  // Label Print States
+  const [selectedLabelIds, setSelectedLabelIds] = useState<string[]>([]);
+  const [isLabelsModalOpen, setIsLabelsModalOpen] = useState(false);
+  const [activePrintType, setActivePrintType] = useState<'letter' | 'labels' | null>(null);
 
   // Letter Generator States
   const [selectedLetterLead, setSelectedLetterLead] = useState<Lead | null>(null);
@@ -131,6 +420,7 @@ export default function Home() {
 
   const handleOpenLetterGenerator = async (lead: Lead) => {
     setSelectedLetterLead(lead);
+    setActivePrintType('letter');
     setRecipientGreetingName("Business Owner");
     setLetterBody(defaultLetterTemplate(lead.name, "Business Owner"));
     setLoadingDirector(true);
@@ -554,9 +844,27 @@ export default function Home() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
               CRM Lead Manager
-              {leads.filter(l => l.status === 'new').length > 0 && (
-                <span className="ml-auto bg-indigo-500 text-white font-semibold text-xs px-2 py-0.5 rounded-full">
-                  {leads.filter(l => l.status === 'new').length}
+              {leads.filter(l => l.status !== 'ignored').length > 0 && (
+                <span className="ml-auto bg-indigo-500 text-white font-semibold text-xs px-2 py-0.5 rounded-full" title="Total active leads">
+                  {leads.filter(l => l.status !== 'ignored').length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setSelectedTab('map')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                selectedTab === 'map'
+                  ? 'bg-slate-800/80 text-white border-l-4 border-indigo-500 shadow-inner'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+              }`}
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+              </svg>
+              Monitored Map
+              {leads.filter(l => l.status === 'printed').length > 0 && (
+                <span className="ml-auto bg-[#35b0f3] text-white font-semibold text-xs px-2 py-0.5 rounded-full">
+                  {leads.filter(l => l.status === 'printed').length}
                 </span>
               )}
             </button>
@@ -619,7 +927,7 @@ export default function Home() {
 
       {/* Main Content Pane */}
       <main className="flex-1 p-6 md:p-8 overflow-y-auto">
-        {selectedTab === 'find' ? (
+        {selectedTab === 'find' && (
           <div>
             {/* Header Controls */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
@@ -793,7 +1101,9 @@ export default function Home() {
               )}
             </div>
           </div>
-        ) : (
+        )}
+
+        {selectedTab === 'crm' && (
           <div>
             {/* CRM Lead Manager View */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
@@ -804,7 +1114,7 @@ export default function Home() {
 
               {/* Status Filters */}
               <div className="bg-slate-900 border border-slate-800 p-1 rounded-xl flex gap-1 text-xs font-medium self-start lg:self-center">
-                {(['all', 'new', 'contacted', 'interested', 'ignored'] as const).map(status => (
+                {(['all', 'new', 'printed', 'delivered', 'interested', 'ignored'] as const).map(status => (
                   <button
                     key={status}
                     onClick={() => setCrmStatusFilter(status)}
@@ -817,7 +1127,8 @@ export default function Home() {
                     <span className={`h-2 w-2 rounded-full ${
                       status === 'all' ? 'bg-indigo-400' :
                       status === 'new' ? 'bg-sky-400' :
-                      status === 'contacted' ? 'bg-amber-400' :
+                      status === 'printed' ? 'bg-indigo-500' :
+                      status === 'delivered' ? 'bg-amber-400' :
                       status === 'interested' ? 'bg-emerald-400' :
                       'bg-slate-500'
                     }`} />
@@ -847,6 +1158,35 @@ export default function Home() {
               </div>
             ) : (
               <div className="space-y-4">
+                {/* Select All Checkbox Helper Row */}
+                <div className="bg-slate-900/20 border border-slate-850/60 rounded-xl px-4 py-3 flex items-center justify-between text-xs text-slate-400">
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={filteredLeads.length > 0 && filteredLeads.every(l => selectedLabelIds.includes(l.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          const toAdd = filteredLeads.map(l => l.id);
+                          setSelectedLabelIds(prev => Array.from(new Set([...prev, ...toAdd])));
+                        } else {
+                          const toRemove = filteredLeads.map(l => l.id);
+                          setSelectedLabelIds(prev => prev.filter(id => !toRemove.includes(id)));
+                        }
+                      }}
+                      className="h-4.5 w-4.5 rounded border-slate-800 text-indigo-600 bg-slate-950 accent-indigo-500 cursor-pointer"
+                    />
+                    <span>Select All {filteredLeads.length} Leads in Filter for Address Labels</span>
+                  </label>
+                  {selectedLabelIds.length > 0 && (
+                    <button
+                      onClick={() => setSelectedLabelIds([])}
+                      className="text-indigo-400 hover:text-indigo-300 font-semibold"
+                    >
+                      Clear Selection ({selectedLabelIds.length})
+                    </button>
+                  )}
+                </div>
+
                 {filteredLeads.map(lead => (
                   <div
                     key={lead.id}
@@ -854,25 +1194,41 @@ export default function Home() {
                   >
                     {/* Header: Company Name & Control Badges */}
                     <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-4 pb-4 border-b border-slate-850/50">
-                      <div>
-                        <h3 className="text-lg font-bold text-white tracking-tight leading-snug">{lead.name}</h3>
-                        <p className="text-xs text-slate-500 mt-1">
-                          No. {lead.company_number} &bull; Incorporated: {formatDate(lead.incorporation_date)}
-                        </p>
+                      <div className="flex items-start gap-3 flex-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedLabelIds.includes(lead.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedLabelIds(prev => [...prev, lead.id]);
+                            } else {
+                              setSelectedLabelIds(prev => prev.filter(id => id !== lead.id));
+                            }
+                          }}
+                          className="mt-1 h-4.5 w-4.5 rounded border-slate-800 text-indigo-600 bg-slate-950 accent-indigo-500 cursor-pointer flex-shrink-0"
+                          title="Select for address labels"
+                        />
+                        <div>
+                          <h3 className="text-lg font-bold text-white tracking-tight leading-snug">{lead.name}</h3>
+                          <p className="text-xs text-slate-500 mt-1">
+                            No. {lead.company_number} &bull; Incorporated: {formatDate(lead.incorporation_date)}
+                          </p>
+                        </div>
                       </div>
 
                       {/* Status selectors & Action options */}
                       <div className="flex flex-wrap items-center gap-2">
                         {/* Status buttons */}
                         <div className="bg-slate-950 p-1 border border-slate-850 rounded-xl flex gap-1 text-[11px] font-semibold">
-                          {(['new', 'contacted', 'interested', 'ignored'] as const).map(st => (
+                          {(['new', 'printed', 'delivered', 'interested', 'ignored'] as const).map(st => (
                             <button
                               key={st}
                               onClick={() => handleUpdateStatus(lead.id, lead.name, st)}
                               className={`px-3 py-1.5 rounded-lg capitalize transition-colors ${
                                 lead.status === st
                                   ? st === 'new' ? 'bg-sky-500/25 text-sky-300 border border-sky-500/20' :
-                                    st === 'contacted' ? 'bg-amber-500/25 text-amber-300 border border-amber-500/20' :
+                                    st === 'printed' ? 'bg-indigo-500/25 text-indigo-300 border border-indigo-500/20' :
+                                    st === 'delivered' ? 'bg-amber-500/25 text-amber-300 border border-amber-500/20' :
                                     st === 'interested' ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/20' :
                                     'bg-slate-800 text-slate-300 border border-slate-700/50'
                                   : 'text-slate-500 hover:text-slate-300 border border-transparent'
@@ -1043,9 +1399,177 @@ export default function Home() {
                 ))}
               </div>
             )}
+
+            {/* Sticky bottom selection bar */}
+            {selectedLabelIds.length > 0 && (
+              <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-40 bg-slate-900/90 border border-slate-800 backdrop-blur-md px-6 py-4 rounded-2xl flex items-center justify-between gap-6 shadow-2xl w-full max-w-xl no-print">
+                <div className="flex flex-col">
+                  <span className="text-sm font-bold text-white">Address Labels Sheet</span>
+                  <span className="text-xs text-slate-400">{selectedLabelIds.length} lead(s) selected</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setIsLabelsModalOpen(true);
+                      setActivePrintType('labels');
+                    }}
+                    className="bg-[#35b0f3] hover:bg-[#35b0f3]/90 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-sky-500/10 active:scale-95 cursor-pointer"
+                  >
+                    Generate Label Sheet
+                  </button>
+                  <button
+                    onClick={() => setSelectedLabelIds([])}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs px-3.5 py-2.5 rounded-xl transition-all active:scale-95 cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
+
+        {selectedTab === 'map' && (
+          <MapComponent leads={leads} onUpdateStatus={handleUpdateStatus} />
+        )}
       </main>
+
+      {/* Modal overlay for Labels Sheet Preview & Setup */}
+      {isLabelsModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 md:p-6 no-print">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-fade-in">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-850 flex items-center justify-between bg-slate-900/60 flex-shrink-0">
+              <div>
+                <h3 className="text-lg font-bold text-white">Generate Address Labels</h3>
+                <p className="text-xs text-slate-400">Generate a sheet of 21 address labels (3 columns x 7 rows, A4 size).</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="bg-[#35b0f3] hover:bg-[#35b0f3]/90 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-md transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 00-2 2h2m2 4h10a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                  Print Labels Sheet (A4)
+                </button>
+                <button
+                  onClick={() => {
+                    setIsLabelsModalOpen(false);
+                    setActivePrintType(null);
+                  }}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content - Left Pane Controls, Right Pane Preview */}
+            <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+              {/* Controls */}
+              <div className="w-full md:w-1/3 p-6 overflow-y-auto border-b md:border-b-0 md:border-r border-slate-850 space-y-5 flex-shrink-0">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Print Settings Advisory</h4>
+                  <div className="bg-sky-950/20 border border-sky-900/40 p-4 rounded-xl text-xs text-slate-300 space-y-2 leading-relaxed font-sans">
+                    <p className="font-semibold text-[#35b0f3] flex items-center gap-1.5">
+                      <span>🖨️</span> Page Alignment Setup:
+                    </p>
+                    <p>To ensure labels line up perfectly with your physical A4 sheets, please apply the following parameters in your browser print dialog:</p>
+                    <ul className="list-disc pl-4 space-y-1">
+                      <li><strong>Margins</strong>: Set to <strong>None</strong> (or Minimum).</li>
+                      <li><strong>Scale</strong>: Set to <strong>100%</strong> (Default).</li>
+                      <li><strong>Headers & Footers</strong>: <strong>Uncheck</strong>.</li>
+                      <li><strong>Background graphics</strong>: <strong>Check</strong>.</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Selected Recipients ({selectedLabelIds.length})</h4>
+                  <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+                    {leads.filter(l => selectedLabelIds.includes(l.id)).map(lead => (
+                      <div key={lead.id} className="bg-slate-950 border border-slate-850 rounded-xl p-3 flex justify-between items-start gap-2">
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-white truncate">{lead.name}</div>
+                          <div className="text-[10px] text-slate-500 truncate mt-0.5">{lead.postcode}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLabelIds(prev => prev.filter(id => id !== lead.id))}
+                          className="text-slate-500 hover:text-red-400 text-xs font-bold px-1.5 py-0.5 rounded hover:bg-slate-900"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+                    {selectedLabelIds.length === 0 && (
+                      <p className="text-xs text-slate-500 italic">No recipients selected. Close this modal and select leads in the list.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Grid Preview (Mockup of A4 page on-screen) */}
+              <div className="flex-1 bg-slate-950 p-6 overflow-auto flex items-start justify-center">
+                {(() => {
+                  const selectedLeadsList = leads.filter(l => selectedLabelIds.includes(l.id));
+                  const pages: Lead[][] = [];
+                  for (let i = 0; i < selectedLeadsList.length; i += 21) {
+                    pages.push(selectedLeadsList.slice(i, i + 21));
+                  }
+
+                  if (pages.length === 0) {
+                    return (
+                      <div className="text-slate-600 text-sm italic mt-12">No labels to preview.</div>
+                    );
+                  }
+
+                  const formatAddressParts = (addr: string | null) => {
+                    if (!addr) return [];
+                    return addr.split(',').map(p => p.trim()).filter(p => {
+                      const l = p.toLowerCase();
+                      return l !== 'united kingdom' && l !== 'england' && l !== 'uk';
+                    });
+                  };
+
+                  return (
+                    <div className="space-y-8 pb-8 flex flex-col items-center">
+                      {pages.map((pageLeads, pageIdx) => (
+                        <div key={pageIdx} className="flex flex-col items-center">
+                          <span className="text-xs font-semibold text-slate-500 mb-2">Sheet Page {pageIdx + 1} of {pages.length}</span>
+                          <div className="bg-white text-zinc-900 shadow-2xl border border-zinc-300 w-[210mm] h-[297mm] p-[15.1mm_7.2mm_15.2mm_7.2mm] grid grid-cols-3 grid-rows-7 gap-x-[2.5mm] gap-y-0 box-border flex-shrink-0">
+                            {Array.from({ length: 21 }).map((_, cellIdx) => {
+                              const lead = pageLeads[cellIdx];
+                              if (lead) {
+                                return (
+                                  <div key={lead.id} className="w-[63.5mm] h-[38.1mm] p-[5mm_6mm] box-border border border-zinc-100 flex flex-col justify-center overflow-hidden font-sans text-left leading-tight text-zinc-900 bg-white">
+                                    <div className="font-bold text-[10px] uppercase tracking-tight text-zinc-800 truncate mb-0.5">{lead.name}</div>
+                                    {formatAddressParts(lead.address).map((part, pIdx) => (
+                                      <div key={pIdx} className="text-[9px] text-zinc-500 truncate leading-snug">{part}</div>
+                                    ))}
+                                  </div>
+                                );
+                              } else {
+                                return (
+                                  <div key={`empty-${cellIdx}`} className="w-[63.5mm] h-[38.1mm] border border-dashed border-zinc-100 bg-zinc-50/20" />
+                                );
+                              }
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* Modal overlay for Letter Editor & Preview */}
       {selectedLetterLead && (
@@ -1184,7 +1708,7 @@ export default function Home() {
                       <div className="text-right">
                         <span className="text-[10px] text-zinc-500 font-semibold block">Hi, I&apos;m {senderName.split(' ')[0]}.</span>
                       </div>
-                      <img src="/stuart.jpg" className="w-12 h-12 rounded-full object-cover border border-zinc-200 shadow-sm" alt={senderName} />
+                      <img src="/stuart.png" className="w-12 h-12 rounded-full object-cover border border-zinc-200 shadow-sm" alt={senderName} />
                     </div>
                   </div>
 
@@ -1247,7 +1771,7 @@ export default function Home() {
                   <div className="text-right">
                     <span className="text-[10px] text-zinc-500 font-semibold block">Hi, I&apos;m {senderName.split(' ')[0]}.</span>
                   </div>
-                  <img src="/stuart.jpg" className="w-12 h-12 rounded-full object-cover border border-zinc-200 shadow-sm" alt={senderName} />
+                  <img src="/stuart.png" className="w-12 h-12 rounded-full object-cover border border-zinc-200 shadow-sm" alt={senderName} />
                 </div>
               </div>
 
@@ -1286,6 +1810,49 @@ export default function Home() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Print-only container for Labels */}
+      {activePrintType === 'labels' && selectedLabelIds.length > 0 && (
+        <div className="print-labels-container hidden">
+          {(() => {
+            const selectedLeadsList = leads.filter(l => selectedLabelIds.includes(l.id));
+            const pages: Lead[][] = [];
+            for (let i = 0; i < selectedLeadsList.length; i += 21) {
+              pages.push(selectedLeadsList.slice(i, i + 21));
+            }
+
+            const formatAddressParts = (addr: string | null) => {
+              if (!addr) return [];
+              return addr.split(',').map(p => p.trim()).filter(p => {
+                const l = p.toLowerCase();
+                return l !== 'united kingdom' && l !== 'england' && l !== 'uk';
+              });
+            };
+
+            return pages.map((pageLeads, pageIdx) => (
+              <div key={pageIdx} className="print-labels-page">
+                {Array.from({ length: 21 }).map((_, cellIdx) => {
+                  const lead = pageLeads[cellIdx];
+                  if (lead) {
+                    return (
+                      <div key={lead.id} className="print-label-cell">
+                        <div className="font-bold text-[10px] uppercase tracking-tight truncate mb-0.5">{lead.name}</div>
+                        {formatAddressParts(lead.address).map((part, pIdx) => (
+                          <div key={pIdx} className="text-[9px] truncate leading-snug">{part}</div>
+                        ))}
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div key={`empty-${cellIdx}`} className="print-label-cell" />
+                    );
+                  }
+                })}
+              </div>
+            ));
+          })()}
         </div>
       )}
 
