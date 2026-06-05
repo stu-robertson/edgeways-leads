@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+@layer utilities {
+  @keyframes slide-in {
+    from {
+      transform: translateY(-1rem);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .animate-slide-in {
+    animation: slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+
+/* Custom styling defaults for smooth scrolling and clean UI */
+html {
+  color-scheme: dark;
+}
+
+/* Smooth custom scrollbars for webkit browsers */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155; /* slate-700 */
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #475569; /* slate-600 */
+}
+
+/* Clean background grid pattern */
+body {
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.05) 0px, transparent 50%),
+    radial-gradient(at 50% 0%, rgba(139, 92, 246, 0.05) 0px, transparent 50%);
+  background-attachment: fixed;
+}
+
+/* Print Overrides */
+@media print {
+  /* Enforce block display and scroll overrides for root HTML & Body */
+  html, body {
+    height: auto !important;
+    min-height: 0 !important;
+    background: white !important;
+    color: black !important;
+    font-family: Georgia, serif !important;
+    overflow: visible !important;
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide Next.js application wrappers, sidebars, modals, buttons, etc. */
+  aside,
+  main,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Unhide the print-container and format to full A4 page width */
+  .print-container {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  .print-paper {
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 2.5cm 2cm !important; /* standard formal margins */
+    width: 100% !important;
+    color: black !important;
+  }
+}
+
