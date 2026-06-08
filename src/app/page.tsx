@@ -1735,7 +1735,7 @@ export default function Home() {
                       <div className="text-right">
                         <span className="text-[10px] text-zinc-500 font-semibold block">Hi, I&apos;m {senderName.split(' ')[0]}.</span>
                       </div>
-                      <img src="/stuart.png" className="w-12 h-12 rounded-full object-cover border border-zinc-200 shadow-sm" alt={senderName} />
+                      <img src="/stuart.jpg" className="w-12 h-12 rounded-full object-cover border border-zinc-200 shadow-sm" alt={senderName} />
                     </div>
                   </div>
 
@@ -1798,7 +1798,7 @@ export default function Home() {
                   <div className="text-right">
                     <span className="text-[10px] text-zinc-500 font-semibold block">Hi, I&apos;m {senderName.split(' ')[0]}.</span>
                   </div>
-                  <img src="/stuart.png" className="w-12 h-12 rounded-full object-cover border border-zinc-200 shadow-sm" alt={senderName} />
+                  <img src="/stuart.jpg" className="w-12 h-12 rounded-full object-cover border border-zinc-200 shadow-sm" alt={senderName} />
                 </div>
               </div>
 
