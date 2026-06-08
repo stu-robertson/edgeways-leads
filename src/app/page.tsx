@@ -476,6 +476,20 @@ export default function Home() {
     }, 150);
   };
 
+  const handleLogout = async () => {
+    try {
+      const res = await fetch("/api/auth/logout", { method: "POST" });
+      if (res.ok) {
+        window.location.href = "/login";
+      } else {
+        triggerAlert("Failed to log out", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      triggerAlert("A network error occurred while logging out", "error");
+    }
+  };
+
   // DB States
   const [watchedLocations, setWatchedLocations] = useState<WatchedLocation[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -947,8 +961,18 @@ export default function Home() {
         </div>
 
         {/* Info/Help Section */}
-        <div className="border-t border-slate-850 pt-6 mt-6 text-xs text-slate-500 leading-relaxed">
+        <div className="border-t border-slate-850 pt-6 mt-6 text-xs text-slate-500 leading-relaxed flex flex-col gap-4">
           <p>This local utility searches the Companies House public ledger to find newly incorporated entities in your monitored postcodes or cities.</p>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 bg-slate-950 hover:bg-slate-900 border border-slate-850 text-slate-400 hover:text-red-400 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all shadow-sm active:scale-95 cursor-pointer no-print"
+          >
+            <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            Sign Out
+          </button>
         </div>
       </aside>
 
