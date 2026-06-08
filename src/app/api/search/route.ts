@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getLeads } from "@/lib/db";
+import { getLeads, getIndustryCategory } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
   try {
@@ -62,6 +62,7 @@ export async function GET(req: NextRequest) {
       const postcode = address.postal_code || null;
       
       const addressParts = [
+        address.premises,
         address.address_line_1,
         address.address_line_2,
         address.locality,
@@ -70,6 +71,8 @@ export async function GET(req: NextRequest) {
         address.country
       ].filter(Boolean);
       const fullAddress = addressParts.join(", ");
+      const sicCodesStr = item.sic_codes ? item.sic_codes.join(", ") : null;
+      const industry_category = getIndustryCategory(sicCodesStr);
       
       return {
         company_number: companyNumber,
@@ -77,7 +80,8 @@ export async function GET(req: NextRequest) {
         incorporation_date: item.date_of_creation,
         postcode,
         address: fullAddress,
-        sic_codes: item.sic_codes ? item.sic_codes.join(", ") : null,
+        sic_codes: sicCodesStr,
+        industry_category,
         is_saved: !!localLead,
         lead_id: localLead ? localLead.id : null,
         lead_status: localLead ? localLead.status : null,

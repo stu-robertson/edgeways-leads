@@ -25,11 +25,29 @@ export async function initDb() {
       postcode TEXT,
       address TEXT,
       sic_codes TEXT,
-      status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'printed', 'delivered', 'interested', 'ignored')),
+      status TEXT NOT NULL DEFAULT 'new',
       notes TEXT,
       next_contact_date DATE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    -- Migrate existing 'ignored' status to 'lost' before changing constraint
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'leads') THEN
+        UPDATE leads SET status = 'lost' WHERE status = 'ignored';
+      END IF;
+    END
+    $$;
+
+    -- Add new columns for directors, category, and delivery date
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS industry_category TEXT;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS directors JSONB;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS delivery_date DATE;
+
+    -- Drop old check constraint and recreate it with the new set of statuses (removing ignored)
+    ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_status_check;
+    ALTER TABLE leads ADD CONSTRAINT leads_status_check CHECK (status IN ('new', 'printed', 'delivered', 'interested', 'meeting', 'quote', 'won', 'lost'));
 
     -- Enable Row Level Security (RLS) for RLS-first design / Supabase compatibility
     ALTER TABLE watched_locations ENABLE ROW LEVEL SECURITY;
@@ -54,18 +72,124 @@ export async function initDb() {
     END
     $$;
   `);
+
+  // Backfill industry_category for existing leads
+  try {
+    const untaggedRes = await pool.query("SELECT id, sic_codes FROM leads WHERE industry_category IS NULL");
+    if (untaggedRes.rows.length > 0) {
+      console.log(`Backfilling industry categories for ${untaggedRes.rows.length} existing leads...`);
+      for (const row of untaggedRes.rows) {
+        const category = getIndustryCategory(row.sic_codes);
+        await pool.query("UPDATE leads SET industry_category = $1 WHERE id = $2", [category, row.id]);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to backfill industry categories:", err);
+  }
+
+  // Backfill directors for existing leads
+  try {
+    const undirectoredRes = await pool.query("SELECT id, company_number FROM leads WHERE directors IS NULL");
+    const apiKey = process.env.COMPANIES_HOUSE_API_KEY;
+    if (apiKey && undirectoredRes.rows.length > 0) {
+      console.log(`Backfilling directors for ${undirectoredRes.rows.length} existing leads...`);
+      for (const row of undirectoredRes.rows) {
+        try {
+          const chUrl = `https://api.company-information.service.gov.uk/company/${row.company_number}/officers`;
+          const authHeader = `Basic ${Buffer.from(apiKey + ":").toString("base64")}`;
+          const response = await fetch(chUrl, {
+            method: "GET",
+            headers: {
+              "Authorization": authHeader,
+              "Accept": "application/json"
+            }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            const items = data.items || [];
+            const directors = items
+              .filter((item: any) => {
+                const isDirector = item.officer_role === "director" || item.officer_role?.includes("director");
+                const isActive = !item.resigned_on;
+                return isDirector && isActive;
+              })
+              .map((item: any) => {
+                const addressObj = item.address || {};
+                const addressParts = [
+                  addressObj.premises,
+                  addressObj.address_line_1,
+                  addressObj.address_line_2,
+                  addressObj.locality,
+                  addressObj.region,
+                  addressObj.postal_code,
+                  addressObj.country
+                ].filter(Boolean);
+                return {
+                  name: item.name || "Unknown Director",
+                  address: addressParts.join(", ") || "No address provided"
+                };
+              });
+            await pool.query("UPDATE leads SET directors = $1 WHERE id = $2", [JSON.stringify(directors), row.id]);
+          }
+          // Sleep briefly to respect Companies House rate limit
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (err) {
+          console.error(`Failed to backfill directors for company ${row.company_number}:`, err);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Failed to backfill directors:", err);
+  }
 }
 
 // Trigger initialization and log outcome
 initDb().then(() => {
-  console.log("PostgreSQL database initialization completed successfully.");
+  console.log("PostgreSQL database initialization and migrations completed successfully.");
 }).catch((err) => {
   console.error("Failed to initialize PostgreSQL database tables:", err);
 });
 
 /**
+ * Categorizes a comma-separated list of SIC codes into 6 industry buckets
+ */
+export function getIndustryCategory(sicCodesStr: string | null): string {
+  if (!sicCodesStr) return "Retail / Hospitality / Everything Else";
+  
+  const codes = sicCodesStr.split(",")
+    .map(c => c.trim().replace(/\D/g, ""))
+    .filter(Boolean);
+    
+  if (codes.length === 0) return "Retail / Hospitality / Everything Else";
+
+  for (const code of codes) {
+    // Trades: Builders, plumbers, electricians, landscapers, roofing, etc.
+    if (code.startsWith("41") || code.startsWith("42") || code.startsWith("43") || code === "81300") {
+      return "Trades";
+    }
+    // Property: Estate agents, letting agents, property management etc.
+    if (code.startsWith("68")) {
+      return "Property";
+    }
+    // Professional Services: Accountants, consultants, surveyors, architects, engineers etc.
+    if (code.startsWith("69") || code.startsWith("71") || code.startsWith("73") || code.startsWith("74") || code.startsWith("702")) {
+      return "Professional Services";
+    }
+    // Recruitment & HR: recruitment agency, HR outsourcing
+    if (code.startsWith("78")) {
+      return "Recruitment & HR";
+    }
+    // Healthcare: Dentists, therapists, clinics, care providers, etc.
+    if (code.startsWith("86") || code.startsWith("87") || code.startsWith("88")) {
+      return "Healthcare";
+    }
+  }
+
+  return "Retail / Hospitality / Everything Else";
+}
+
+/**
  * Generates a UUID v7 compliant string.
- * UUID v7 contains a 48-bit timestamp followed by 74 bits of entropy/metadata.
  */
 export function generateUUIDv7(): string {
   const timestamp = Date.now();
@@ -103,10 +227,13 @@ export interface Lead {
   incorporation_date: string;
   postcode: string | null;
   address: string | null;
-  sic_codes: string | null; // Comma-separated or JSON string
-  status: 'new' | 'printed' | 'delivered' | 'interested' | 'ignored';
+  sic_codes: string | null;
+  industry_category: string | null;
+  directors: { name: string; address: string }[] | null;
+  status: 'new' | 'printed' | 'delivered' | 'interested' | 'meeting' | 'quote' | 'won' | 'lost';
   notes: string | null;
   next_contact_date: string | null;
+  delivery_date: string | null;
   created_at: string;
 }
 
@@ -158,28 +285,34 @@ export async function deleteWatchedLocation(id: string): Promise<void> {
 export async function getLeads(): Promise<Lead[]> {
   try {
     const res = await pool.query(
-      "SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, status, notes, next_contact_date::text, created_at::text FROM leads ORDER BY incorporation_date DESC, created_at DESC"
+      "SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, industry_category, directors, status, notes, next_contact_date::text, delivery_date::text, created_at::text FROM leads ORDER BY incorporation_date DESC, created_at DESC"
     );
-    return res.rows as Lead[];
+    
+    return res.rows.map(row => ({
+      ...row,
+      directors: typeof row.directors === "string" ? JSON.parse(row.directors) : row.directors
+    })) as Lead[];
   } catch (error) {
     console.error("Error fetching leads:", error);
     return [];
   }
 }
 
-export async function saveLead(lead: Omit<Lead, "id" | "created_at" | "status" | "notes" | "next_contact_date">): Promise<Lead> {
+export async function saveLead(lead: Omit<Lead, "id" | "created_at" | "status" | "notes" | "next_contact_date" | "delivery_date">): Promise<Lead> {
   const id = generateUUIDv7();
   try {
     await pool.query(
       `
-      INSERT INTO leads (id, company_number, name, incorporation_date, postcode, address, sic_codes, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, 'new')
+      INSERT INTO leads (id, company_number, name, incorporation_date, postcode, address, sic_codes, industry_category, directors, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'new')
       ON CONFLICT(company_number) DO UPDATE SET
         name = EXCLUDED.name,
         incorporation_date = EXCLUDED.incorporation_date,
         postcode = EXCLUDED.postcode,
         address = EXCLUDED.address,
-        sic_codes = EXCLUDED.sic_codes
+        sic_codes = EXCLUDED.sic_codes,
+        industry_category = EXCLUDED.industry_category,
+        directors = EXCLUDED.directors
       `,
       [
         id,
@@ -188,22 +321,29 @@ export async function saveLead(lead: Omit<Lead, "id" | "created_at" | "status" |
         lead.incorporation_date,
         lead.postcode,
         lead.address,
-        lead.sic_codes
+        lead.sic_codes,
+        lead.industry_category,
+        lead.directors ? JSON.stringify(lead.directors) : null
       ]
     );
 
     const res = await pool.query(
-      "SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, status, notes, next_contact_date::text, created_at::text FROM leads WHERE company_number = $1",
+      "SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, industry_category, directors, status, notes, next_contact_date::text, delivery_date::text, created_at::text FROM leads WHERE company_number = $1",
       [lead.company_number]
     );
-    return res.rows[0] as Lead;
+    
+    const row = res.rows[0];
+    if (row) {
+      row.directors = typeof row.directors === "string" ? JSON.parse(row.directors) : row.directors;
+    }
+    return row as Lead;
   } catch (error) {
     console.error(`Error saving lead ${lead.company_number}:`, error);
     throw error;
   }
 }
 
-export async function updateLead(id: string, updates: { status?: Lead["status"]; notes?: string | null; next_contact_date?: string | null }): Promise<Lead> {
+export async function updateLead(id: string, updates: { status?: Lead["status"]; notes?: string | null; next_contact_date?: string | null; delivery_date?: string | null }): Promise<Lead> {
   const fields: string[] = [];
   const params: any[] = [];
   let paramIndex = 1;
@@ -223,6 +363,11 @@ export async function updateLead(id: string, updates: { status?: Lead["status"];
     params.push(updates.next_contact_date || null);
   }
 
+  if (updates.delivery_date !== undefined) {
+    fields.push(`delivery_date = $${paramIndex++}`);
+    params.push(updates.delivery_date || null);
+  }
+
   if (fields.length > 0) {
     params.push(id);
     const sql = `UPDATE leads SET ${fields.join(", ")} WHERE id = $${paramIndex}`;
@@ -236,10 +381,14 @@ export async function updateLead(id: string, updates: { status?: Lead["status"];
 
   try {
     const res = await pool.query(
-      "SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, status, notes, next_contact_date::text, created_at::text FROM leads WHERE id = $1",
+      "SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, industry_category, directors, status, notes, next_contact_date::text, delivery_date::text, created_at::text FROM leads WHERE id = $1",
       [id]
     );
-    return res.rows[0] as Lead;
+    const row = res.rows[0];
+    if (row) {
+      row.directors = typeof row.directors === "string" ? JSON.parse(row.directors) : row.directors;
+    }
+    return row as Lead;
   } catch (error) {
     console.error(`Error fetching updated lead ${id}:`, error);
     throw error;

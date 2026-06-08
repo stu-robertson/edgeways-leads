@@ -17,9 +17,12 @@ interface Lead {
   postcode: string | null;
   address: string | null;
   sic_codes: string | null;
-  status: 'new' | 'printed' | 'delivered' | 'interested' | 'ignored';
+  industry_category: string | null;
+  directors: { name: string; address: string }[] | null;
+  status: 'new' | 'printed' | 'delivered' | 'interested' | 'meeting' | 'quote' | 'won' | 'lost';
   notes: string | null;
   next_contact_date: string | null;
+  delivery_date: string | null;
   created_at: string;
 }
 
@@ -30,6 +33,7 @@ interface DiscoveredCompany {
   postcode: string | null;
   address: string | null;
   sic_codes: string | null;
+  industry_category?: string | null;
   is_saved: boolean;
   lead_id: string | null;
   lead_status: Lead["status"] | null;
@@ -419,7 +423,11 @@ export default function Home() {
   // Navigation & Filters
   const [selectedTab, setSelectedTab] = useState<'find' | 'crm' | 'map'>('find');
   const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | '7days' | '30days'>('7days');
-  const [crmStatusFilter, setCrmStatusFilter] = useState<'all' | 'new' | 'printed' | 'delivered' | 'interested' | 'ignored'>('all');
+  const [crmStatusFilter, setCrmStatusFilter] = useState<'all' | 'new' | 'printed' | 'delivered' | 'interested' | 'meeting' | 'quote' | 'won' | 'lost'>('all');
+
+  // Delivery date prompt state
+  const [deliveryDatePromptLead, setDeliveryDatePromptLead] = useState<{ id: string; name: string } | null>(null);
+  const [selectedDeliveryDate, setSelectedDeliveryDate] = useState("");
 
   // Label Print States
   const [selectedLabelIds, setSelectedLabelIds] = useState<string[]>([]);
@@ -648,6 +656,11 @@ export default function Home() {
 
   // Update CRM Lead Status
   const handleUpdateStatus = async (id: string, name: string, status: Lead["status"]) => {
+    if (status === 'delivered') {
+      setDeliveryDatePromptLead({ id, name });
+      setSelectedDeliveryDate(new Date().toISOString().split("T")[0]);
+      return;
+    }
     try {
       const res = await fetch("/api/leads", {
         method: "PUT",
@@ -664,6 +677,34 @@ export default function Home() {
       triggerAlert(`Updated "${name}" status to ${status}`, "success");
     } catch (err: any) {
       triggerAlert(err.message || "Failed to update status", "error");
+    }
+  };
+
+  // Save Delivery Date for Lead (compulsory prompt handler)
+  const handleSaveDeliveryDate = async () => {
+    if (!deliveryDatePromptLead) return;
+    const { id, name } = deliveryDatePromptLead;
+    try {
+      const res = await fetch("/api/leads", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          status: 'delivered',
+          delivery_date: selectedDeliveryDate || new Date().toISOString().split("T")[0]
+        })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to log delivery date");
+      }
+
+      setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'delivered', delivery_date: selectedDeliveryDate } : l));
+      setDeliveryDatePromptLead(null);
+      triggerAlert(`Marked "${name}" as delivered on ${formatDate(selectedDeliveryDate)}`, "success");
+    } catch (err: any) {
+      triggerAlert(err.message || "Failed to log delivery date", "error");
     }
   };
 
@@ -885,9 +926,9 @@ export default function Home() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
               CRM Lead Manager
-              {leads.filter(l => l.status !== 'ignored').length > 0 && (
+              {leads.filter(l => l.status !== 'lost').length > 0 && (
                 <span className="ml-auto bg-indigo-500 text-white font-semibold text-xs px-2 py-0.5 rounded-full" title="Total active leads">
-                  {leads.filter(l => l.status !== 'ignored').length}
+                  {leads.filter(l => l.status !== 'lost').length}
                 </span>
               )}
             </button>
@@ -1096,6 +1137,14 @@ export default function Home() {
                               <span>Postcode: <strong className="text-slate-300 font-semibold">{company.postcode}</strong></span>
                             </div>
                           )}
+                          {company.industry_category && (
+                            <div className="flex items-center gap-2 sm:col-span-2">
+                              <svg className="h-4.5 w-4.5 text-slate-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                              </svg>
+                              <span>Category: <strong className="px-2 py-0.5 rounded bg-slate-950 border border-slate-850 text-indigo-400 font-mono text-[10px]">{company.industry_category}</strong></span>
+                            </div>
+                          )}
                           {company.sic_codes && (
                             <div className="flex items-start gap-2 sm:col-span-2">
                               <svg className="h-4.5 w-4.5 text-slate-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1164,8 +1213,8 @@ export default function Home() {
               </div>
 
               {/* Status Filters */}
-              <div className="bg-slate-900 border border-slate-800 p-1 rounded-xl flex gap-1 text-xs font-medium self-start lg:self-center">
-                {(['all', 'new', 'printed', 'delivered', 'interested', 'ignored'] as const).map(status => (
+              <div className="bg-slate-900 border border-slate-800 p-1 rounded-xl flex flex-wrap gap-1 text-xs font-medium self-start lg:self-center">
+                {(['all', 'new', 'printed', 'delivered', 'interested', 'meeting', 'quote', 'won', 'lost'] as const).map(status => (
                   <button
                     key={status}
                     onClick={() => setCrmStatusFilter(status)}
@@ -1179,9 +1228,12 @@ export default function Home() {
                       status === 'all' ? 'bg-indigo-400' :
                       status === 'new' ? 'bg-sky-400' :
                       status === 'printed' ? 'bg-indigo-500' :
-                      status === 'delivered' ? 'bg-amber-400' :
-                      status === 'interested' ? 'bg-emerald-400' :
-                      'bg-slate-500'
+                      status === 'delivered' ? 'bg-emerald-500' :
+                      status === 'interested' ? 'bg-pink-400' :
+                      status === 'meeting' ? 'bg-purple-400' :
+                      status === 'quote' ? 'bg-amber-400' :
+                      status === 'won' ? 'bg-teal-400' :
+                      'bg-rose-500'
                     }`} />
                     {status}
                     {status !== 'all' && leads.filter(l => l.status === status).length > 0 && (
@@ -1270,8 +1322,8 @@ export default function Home() {
                       {/* Status selectors & Action options */}
                       <div className="flex flex-wrap items-center gap-2">
                         {/* Status buttons */}
-                        <div className="bg-slate-950 p-1 border border-slate-850 rounded-xl flex gap-1 text-[11px] font-semibold">
-                          {(['new', 'printed', 'delivered', 'interested', 'ignored'] as const).map(st => (
+                        <div className="bg-slate-950 p-1 border border-slate-850 rounded-xl flex flex-wrap gap-1 text-[11px] font-semibold">
+                          {(['new', 'printed', 'delivered', 'interested', 'meeting', 'quote', 'won', 'lost'] as const).map(st => (
                             <button
                               key={st}
                               onClick={() => handleUpdateStatus(lead.id, lead.name, st)}
@@ -1279,9 +1331,12 @@ export default function Home() {
                                 lead.status === st
                                   ? st === 'new' ? 'bg-sky-500/25 text-sky-300 border border-sky-500/20' :
                                     st === 'printed' ? 'bg-indigo-500/25 text-indigo-300 border border-indigo-500/20' :
-                                    st === 'delivered' ? 'bg-amber-500/25 text-amber-300 border border-amber-500/20' :
-                                    st === 'interested' ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/20' :
-                                    'bg-slate-800 text-slate-300 border border-slate-700/50'
+                                    st === 'delivered' ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/20' :
+                                    st === 'interested' ? 'bg-pink-500/25 text-pink-300 border border-pink-500/20' :
+                                    st === 'meeting' ? 'bg-purple-500/25 text-purple-300 border border-purple-500/20' :
+                                    st === 'quote' ? 'bg-amber-500/25 text-amber-300 border border-amber-500/20' :
+                                    st === 'won' ? 'bg-teal-500/25 text-teal-300 border border-teal-500/20' :
+                                    'bg-rose-500/25 text-rose-300 border border-rose-500/20'
                                   : 'text-slate-500 hover:text-slate-300 border border-transparent'
                               }`}
                             >
@@ -1331,6 +1386,16 @@ export default function Home() {
                           )}
                           {lead.sic_codes && (
                             <p className="text-slate-500 mt-2 text-xs">SIC: {lead.sic_codes}</p>
+                          )}
+                          {lead.industry_category && (
+                            <p className="text-slate-300 mt-1.5 text-xs font-semibold">
+                              Category: <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-indigo-400 font-mono text-[10px]">{lead.industry_category}</span>
+                            </p>
+                          )}
+                          {lead.delivery_date && lead.status === 'delivered' && (
+                            <p className="text-emerald-400 mt-2 text-xs font-bold flex items-center gap-1.5">
+                              <span className="text-[14px]">📅</span> Delivered: {formatDate(lead.delivery_date)}
+                            </p>
                           )}
                         </div>
 
@@ -1446,6 +1511,20 @@ export default function Home() {
                         )}
                       </div>
                     </div>
+                    {/* Directors Row */}
+                    {lead.directors && lead.directors.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-slate-850/50">
+                        <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider block mb-2">Directors & Addresses</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {lead.directors.map((dir, dIdx) => (
+                            <div key={dIdx} className="bg-slate-950/40 border border-slate-850 rounded-xl p-3 flex flex-col justify-center min-h-[50px]">
+                              <div className="text-xs font-bold text-slate-200">{dir.name}</div>
+                              <div className="text-[10.5px] text-slate-500 leading-normal mt-1" title={dir.address}>{dir.address}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1904,6 +1983,62 @@ export default function Home() {
               </div>
             ));
           })()}
+        </div>
+      )}
+
+      {/* Modal overlay for Logging Delivery Date */}
+      {deliveryDatePromptLead && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-fade-in">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-850 flex items-center justify-between bg-slate-900/60">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span>📅</span> Log Delivery Date
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Marking <span className="text-indigo-400 font-semibold">{deliveryDatePromptLead.name}</span> as delivered.
+                </p>
+              </div>
+            </div>
+            {/* Modal Content */}
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-xs text-slate-400 font-semibold block mb-2">
+                  Delivery Date (Compulsory)
+                </label>
+                <input
+                  type="date"
+                  value={selectedDeliveryDate}
+                  onChange={(e) => setSelectedDeliveryDate(e.target.value)}
+                  required
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-sans"
+                />
+              </div>
+            </div>
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-950/40 border-t border-slate-850 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeliveryDatePromptLead(null)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer active:scale-95"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveDeliveryDate}
+                disabled={!selectedDeliveryDate}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold shadow-md transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer ${
+                  selectedDeliveryDate
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/10'
+                    : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
+                }`}
+              >
+                ✓ Confirm Delivery
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
