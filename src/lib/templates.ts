@@ -30,9 +30,9 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     potentialValue: "High",
     likelyNeeds: ["Credibility website", "Appointment booking"],
     futureNeeds: ["Client portals", "Document workflows"],
-    price: 450,
-    monthlyPrice: 37.5,
-    wasPrice: 1800,
+    price: 300,
+    monthlyPrice: 25,
+    wasPrice: 1200,
     pitchTitle: "Polished Credibility Website Offer"
   },
   "Health & Wellness": {
@@ -40,9 +40,9 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     potentialValue: "High",
     likelyNeeds: ["Booking systems", "Websites"],
     futureNeeds: ["Membership management", "Client records"],
-    price: 400,
-    monthlyPrice: 33,
-    wasPrice: 1600,
+    price: 300,
+    monthlyPrice: 25,
+    wasPrice: 1200,
     pitchTitle: "Booking & Information Website Offer"
   },
   "Hospitality & Food": {
@@ -50,9 +50,9 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     potentialValue: "Medium",
     likelyNeeds: ["Websites", "Online ordering"],
     futureNeeds: ["Booking systems"],
-    price: 350,
-    monthlyPrice: 29,
-    wasPrice: 1400,
+    price: 300,
+    monthlyPrice: 25,
+    wasPrice: 1200,
     pitchTitle: "Menu & Reservation Website Offer"
   },
   "Retail & Ecommerce": {
@@ -60,9 +60,9 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     potentialValue: "High",
     likelyNeeds: ["Ecommerce", "Websites"],
     futureNeeds: ["Stock systems", "Integrations"],
-    price: 450,
-    monthlyPrice: 37.5,
-    wasPrice: 1800,
+    price: 300,
+    monthlyPrice: 25,
+    wasPrice: 1200,
     pitchTitle: "Ecommerce Starter Website Offer"
   },
   "Property & Construction": {
@@ -70,9 +70,9 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     potentialValue: "Very High",
     likelyNeeds: ["Portals", "Websites"],
     futureNeeds: ["CRM", "Workflow automation"],
-    price: 500,
-    monthlyPrice: 41.5,
-    wasPrice: 2000,
+    price: 300,
+    monthlyPrice: 25,
+    wasPrice: 1200,
     pitchTitle: "Property Showcase Website Offer"
   },
   "Manufacturing & Engineering": {
@@ -80,9 +80,9 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     potentialValue: "Very High",
     likelyNeeds: ["Quoting systems", "Websites"],
     futureNeeds: ["Production tracking", "Internal software"],
-    price: 600,
-    monthlyPrice: 50,
-    wasPrice: 2400,
+    price: 300,
+    monthlyPrice: 25,
+    wasPrice: 1200,
     pitchTitle: "Technical Capability Website Offer"
   },
   "Transport & Logistics": {
@@ -90,9 +90,9 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     potentialValue: "High",
     likelyNeeds: ["Tracking", "Scheduling"],
     futureNeeds: ["Fleet management", "Websites"],
-    price: 450,
-    monthlyPrice: 37.5,
-    wasPrice: 1800,
+    price: 300,
+    monthlyPrice: 25,
+    wasPrice: 1200,
     pitchTitle: "Showcase & Operations Website Offer"
   },
   "Education & Training": {
@@ -100,9 +100,9 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     potentialValue: "High",
     likelyNeeds: ["Booking", "Websites"],
     futureNeeds: ["LMS", "Membership"],
-    price: 400,
-    monthlyPrice: 33,
-    wasPrice: 1600,
+    price: 300,
+    monthlyPrice: 25,
+    wasPrice: 1200,
     pitchTitle: "Training & Booking Website Offer"
   },
   "Creative & Media": {
@@ -110,9 +110,9 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     potentialValue: "Medium",
     likelyNeeds: ["Portfolio sites", "Websites"],
     futureNeeds: ["Client systems"],
-    price: 350,
-    monthlyPrice: 29,
-    wasPrice: 1400,
+    price: 300,
+    monthlyPrice: 25,
+    wasPrice: 1200,
     pitchTitle: "High-Impact Portfolio Website Offer"
   },
   "Technology": {
@@ -120,9 +120,9 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     potentialValue: "High",
     likelyNeeds: ["Development partnerships", "Websites"],
     futureNeeds: ["Specialist projects"],
-    price: 500,
-    monthlyPrice: 41.5,
-    wasPrice: 2000,
+    price: 300,
+    monthlyPrice: 25,
+    wasPrice: 1200,
     pitchTitle: "Technical Showcase Website Offer"
   },
   "Other Local Services": {
@@ -149,22 +149,22 @@ export const CATEGORY_LETTER_COPY_MAP: Record<string, LetterCategoryCopy> = {
       "In professional services, first impressions matter. A well-designed website can help establish credibility, explain your services clearly and give potential clients confidence in choosing you."
   },
   "Health & Wellness": {
-    openingContext: "I noticed that you've recently started a new health or wellness business and just wanted to introduce myself.",
+    openingContext: "I noticed that you've recently started a new health / wellness business and just wanted to introduce myself.",
     websiteReason:
       "When people are choosing a healthcare or wellness provider, they often want to quickly understand what services you offer and how to get in touch. A professional website can help make that process simple and straightforward."
   },
   "Hospitality & Food": {
-    openingContext: "I noticed that you've recently started a new hospitality or food business and just wanted to introduce myself.",
+    openingContext: "I noticed that you've recently started a new hospitality / food business and just wanted to introduce myself.",
     websiteReason:
       "Whether customers are looking for your menu, opening hours, location or contact details, a professional website can make it much easier for people to discover your business and plan a visit."
   },
   "Retail & Ecommerce": {
-    openingContext: "I noticed that you've recently started a new retail or ecommerce business and just wanted to introduce myself.",
+    openingContext: "I noticed that you've recently started a new retail / ecommerce business and just wanted to introduce myself.",
     websiteReason:
       "A professional website can help customers find your business, learn more about what you offer and build confidence in your brand from the outset."
   },
   "Property & Construction": {
-    openingContext: "I noticed that you've recently started a new property or construction business and just wanted to introduce myself.",
+    openingContext: "I noticed that you've recently started a new property / construction business and just wanted to introduce myself.",
     websiteReason:
       "Whether you're showcasing developments, attracting new clients or building credibility in the local area, a professional website can be a valuable asset from the very beginning."
   },
@@ -174,17 +174,17 @@ export const CATEGORY_LETTER_COPY_MAP: Record<string, LetterCategoryCopy> = {
       "Many engineering and manufacturing businesses rely on reputation, referrals and business relationships. A professional website can help reinforce that credibility and provide potential customers with a clear understanding of your capabilities."
   },
   "Transport & Logistics": {
-    openingContext: "I noticed that you've recently started a new transport or logistics business and just wanted to introduce myself.",
+    openingContext: "I noticed that you've recently started a new transport / logistics business and just wanted to introduce myself.",
     websiteReason:
       "A professional website can help customers understand the services you provide, make enquiries and build confidence in your business from the outset."
   },
   "Education & Training": {
-    openingContext: "I noticed that you've recently started a new education or training business and just wanted to introduce myself.",
+    openingContext: "I noticed that you've recently started a new education / training business and just wanted to introduce myself.",
     websiteReason:
       "A clear, professional website can help potential learners understand what you offer, find key information and get in touch easily."
   },
   "Creative & Media": {
-    openingContext: "I noticed that you've recently started a new creative or media business and just wanted to introduce myself.",
+    openingContext: "I noticed that you've recently started a new creative / media business and just wanted to introduce myself.",
     websiteReason:
       "For creative businesses, your website is often one of the first examples of your work that potential clients will see. A professional website can help you showcase your skills and make a strong first impression."
   },
@@ -275,7 +275,7 @@ Please note: To make sure every project gets the time and attention it deserves,
 
 The website would be professionally designed, mobile-friendly, fully managed and include a full year of hosting at no extra cost.
 
-There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat about your plans, or if you think I might be able to help with your online presence or creating software for your business, feel free to call, email, or visit our website.
+There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat about your plans, or if you think I might be able to help with your online presence or creating software for your business, feel free to call, email, or visit our website at www.edgewaysdigital.com.
 
 Either way, I wish you every success with your new business.`;
 }
