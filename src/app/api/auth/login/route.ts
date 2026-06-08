@@ -12,10 +12,14 @@ export async function POST(req: NextRequest) {
     if (username === expectedUsername && password === expectedPassword) {
       const response = NextResponse.json({ success: true });
       
+      const isSecure = req.nextUrl.protocol === "https:" || 
+                       req.headers.get("x-forwarded-proto") === "https" || 
+                       (process.env.APP_URL?.startsWith("https://") ?? false);
+
       // Set session cookie with exactly 8 hours expiration (28,800 seconds)
       response.cookies.set("edgeways_session", "authenticated", {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: isSecure,
         sameSite: "lax",
         path: "/",
         maxAge: 60 * 60 * 8, // 8 hours
