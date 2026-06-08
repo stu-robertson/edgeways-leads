@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { defaultLetterTemplate } from "@/lib/templates";
+import { defaultLetterTemplate, CATEGORY_METADATA_MAP, getLetterTemplate, toProperCase } from "@/lib/templates";
 
 interface WatchedLocation {
   id: string;
@@ -57,12 +57,20 @@ const renderParagraphs = (text: string, textClassName: string) => {
   );
 };
 
-const renderBodyContent = (bodyText: string, textClassName: string) => {
+const renderBodyContent = (bodyText: string, textClassName: string, category: string | null = null) => {
   const placeholder = "[Offer Card]";
   if (bodyText.includes(placeholder)) {
     const parts = bodyText.split(placeholder);
     const intro = parts[0] || "";
     const outro = parts[1] || "";
+    
+    // Fetch pricing details based on category
+    const meta = category ? CATEGORY_METADATA_MAP[category] : null;
+    const price = meta?.price || 300;
+    const wasPrice = meta?.wasPrice || 1200;
+    const monthlyPrice = meta?.monthlyPrice || 25;
+    const pitchTitle = meta?.pitchTitle || "New Business Website Offer";
+    
     return (
       <div className="space-y-4">
         {intro.trim() && renderParagraphs(intro, textClassName)}
@@ -78,7 +86,7 @@ const renderBodyContent = (bodyText: string, textClassName: string) => {
               Local Business Exclusive
             </span>
             <h3 className="text-sm font-bold text-[#35b0f3] uppercase tracking-wider mb-2">
-              New Business Website Offer
+              {pitchTitle}
             </h3>
             <ul className="space-y-1.5 text-[13px] text-zinc-700">
               <li className="flex items-center gap-2">
@@ -100,11 +108,11 @@ const renderBodyContent = (bodyText: string, textClassName: string) => {
           <div className="sm:text-right bg-white/90 border border-zinc-200/80 p-4 rounded-2xl sm:min-w-[185px] shadow-sm flex flex-col justify-center w-full sm:w-auto">
             <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-bold mb-0.5">Special Price</div>
             <div className="flex items-baseline justify-start sm:justify-end gap-1.5 mb-0.5">
-              <span className="text-2xl font-black text-zinc-900">£300</span>
-              <span className="text-xs text-zinc-400 line-through">was £1,200</span>
+              <span className="text-2xl font-black text-zinc-900">£{price}</span>
+              <span className="text-xs text-zinc-400 line-through">was £{wasPrice}</span>
             </div>
             <div className="border-t border-zinc-150/80 pt-1.5 text-[10.5px] text-zinc-500 font-medium leading-tight">
-              Or split the cost: <span className="font-bold text-[#35b0f3] block text-[10.5px] mt-0.5">£25/month for 12 months</span>
+              Or split the cost: <span className="font-bold text-[#35b0f3] block text-[10.5px] mt-0.5">£{monthlyPrice}/month for 12 months</span>
             </div>
           </div>
         </div>
@@ -449,7 +457,9 @@ export default function Home() {
     setSelectedLetterLead(lead);
     setActivePrintType('letter');
     setRecipientGreetingName("Business Owner");
-    setLetterBody(defaultLetterTemplate(lead.name, "Business Owner"));
+    
+    const initialTemplate = getLetterTemplate(lead.industry_category || "", lead.name, "Business Owner");
+    setLetterBody(initialTemplate);
     setLoadingDirector(true);
     
     try {
@@ -461,9 +471,9 @@ export default function Home() {
           setRecipientGreetingName(name);
           
           setLetterBody(prev => {
-            const defaultWithPlaceholder = defaultLetterTemplate(lead.name, "Business Owner");
+            const defaultWithPlaceholder = getLetterTemplate(lead.industry_category || "", lead.name, "Business Owner");
             if (prev === defaultWithPlaceholder) {
-              return defaultLetterTemplate(lead.name, name);
+              return getLetterTemplate(lead.industry_category || "", lead.name, name);
             }
             return prev.replace("Dear Business Owner,", `Dear ${name},`);
           });
@@ -1145,6 +1155,27 @@ export default function Home() {
                               <span>Category: <strong className="px-2 py-0.5 rounded bg-slate-950 border border-slate-850 text-indigo-400 font-mono text-[10px]">{company.industry_category}</strong></span>
                             </div>
                           )}
+                          {company.industry_category && CATEGORY_METADATA_MAP[company.industry_category] && (
+                            <>
+                              <div className="flex items-center gap-2 sm:col-span-2">
+                                <svg className="h-4.5 w-4.5 text-slate-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span>Value: <strong className={`px-2 py-0.5 rounded text-[10px] border font-mono ${
+                                  CATEGORY_METADATA_MAP[company.industry_category].potentialValue === 'Very High' ? 'bg-emerald-950/40 border-emerald-900/50 text-emerald-400' :
+                                  CATEGORY_METADATA_MAP[company.industry_category].potentialValue === 'High' ? 'bg-blue-950/40 border-blue-900/50 text-blue-400' :
+                                  CATEGORY_METADATA_MAP[company.industry_category].potentialValue === 'Medium' ? 'bg-amber-950/40 border-amber-900/50 text-amber-400' :
+                                  'bg-slate-900 border-slate-800 text-slate-400'
+                                }`}>{CATEGORY_METADATA_MAP[company.industry_category].potentialValue}</strong></span>
+                              </div>
+                              <div className="flex items-start gap-2 sm:col-span-2">
+                                <svg className="h-4.5 w-4.5 text-slate-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                </svg>
+                                <span className="text-xs text-slate-300">Initial Offer: <span className="text-indigo-400 font-semibold">{CATEGORY_METADATA_MAP[company.industry_category].pitchTitle.replace(" Offer", "")} (£{CATEGORY_METADATA_MAP[company.industry_category].price})</span></span>
+                              </div>
+                            </>
+                          )}
                           {company.sic_codes && (
                             <div className="flex items-start gap-2 sm:col-span-2">
                               <svg className="h-4.5 w-4.5 text-slate-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1388,14 +1419,35 @@ export default function Home() {
                             <p className="text-slate-500 mt-2 text-xs">SIC: {lead.sic_codes}</p>
                           )}
                           {lead.industry_category && (
-                            <p className="text-slate-300 mt-1.5 text-xs font-semibold">
-                              Category: <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-indigo-400 font-mono text-[10px]">{lead.industry_category}</span>
+                            <p className="text-slate-400 mt-2 text-xs flex flex-wrap gap-2 items-center">
+                              <span>Category:</span>
+                              <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-indigo-400 font-mono text-[10.5px] font-semibold">{lead.industry_category}</span>
+                              {CATEGORY_METADATA_MAP[lead.industry_category] && (
+                                <span className={`px-2 py-0.5 rounded text-[10.5px] border font-mono font-semibold ${
+                                  CATEGORY_METADATA_MAP[lead.industry_category].potentialValue === 'Very High' ? 'bg-emerald-950/40 border-emerald-900/50 text-emerald-400' :
+                                  CATEGORY_METADATA_MAP[lead.industry_category].potentialValue === 'High' ? 'bg-blue-950/40 border-blue-900/50 text-blue-400' :
+                                  CATEGORY_METADATA_MAP[lead.industry_category].potentialValue === 'Medium' ? 'bg-amber-950/40 border-amber-900/50 text-amber-400' :
+                                  'bg-slate-900 border-slate-800 text-slate-400'
+                                }`}>{CATEGORY_METADATA_MAP[lead.industry_category].potentialValue} Value</span>
+                              )}
                             </p>
                           )}
-                          {lead.delivery_date && lead.status === 'delivered' && (
-                            <p className="text-emerald-400 mt-2 text-xs font-bold flex items-center gap-1.5">
-                              <span className="text-[14px]">📅</span> Delivered: {formatDate(lead.delivery_date)}
-                            </p>
+                          {lead.industry_category && CATEGORY_METADATA_MAP[lead.industry_category] && (
+                            <div className="mt-3 space-y-1.5 border-t border-slate-850/30 pt-3">
+                              <p className="text-[11.5px] text-slate-400 leading-normal">
+                                <span className="text-slate-500 font-medium block uppercase tracking-wider text-[9px] mb-1">Initial Service Offer</span>
+                                <span className="text-indigo-300 font-semibold">{CATEGORY_METADATA_MAP[lead.industry_category].pitchTitle.replace(" Offer", "")} (£{CATEGORY_METADATA_MAP[lead.industry_category].price})</span>
+                              </p>
+                              {lead.delivery_date && lead.status === 'delivered' && (
+                                <p className="text-emerald-400 text-xs font-bold flex items-center gap-1.5">
+                                  <span className="text-[14px]">📅</span> Delivered: {formatDate(lead.delivery_date)}
+                                </p>
+                              )}
+                              <p className="text-[11.5px] text-slate-400 leading-normal">
+                                <span className="text-slate-500 font-medium block uppercase tracking-wider text-[9px] mb-1">Future Offerings (upsell)</span>
+                                <span className="text-slate-300 font-semibold">{CATEGORY_METADATA_MAP[lead.industry_category].futureNeeds.join(", ")}</span>
+                              </p>
+                            </div>
                           )}
                         </div>
 
@@ -1718,7 +1770,7 @@ export default function Home() {
                   className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-md transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 00-2 2h2m2 4h10a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 00-2 2h2m2 4h10a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                   </svg>
                   Print Letter (A4)
                 </button>
@@ -1850,12 +1902,12 @@ export default function Home() {
                   {/* Headline & Subheading */}
                   <div className="mb-4">
                     <h2 className="text-lg font-extrabold text-[#35b0f3] leading-snug mb-1">
-                      Congratulations on starting {selectedLetterLead.name}
+                      Congratulations on starting {toProperCase(selectedLetterLead.name)}
                     </h2>
                   </div>
 
                   {/* Letter Content */}
-                  {renderBodyContent(letterBody, "text-[#27272a] text-[13.5px] leading-relaxed")}
+                  {renderBodyContent(letterBody, "text-[#27272a] text-[13.5px] leading-relaxed", selectedLetterLead.industry_category)}
 
                   {/* Signature */}
                   <div className="mt-6 text-xs text-zinc-500 leading-relaxed">
@@ -1913,12 +1965,12 @@ export default function Home() {
               {/* Headline & Subheading */}
               <div className="mb-4">
                 <h2 className="text-lg font-extrabold text-[#35b0f3] leading-snug mb-1">
-                  Congratulations on starting {selectedLetterLead.name}
+                  Congratulations on starting {toProperCase(selectedLetterLead.name)}
                 </h2>
               </div>
 
               {/* Letter Content */}
-              {renderBodyContent(letterBody, "text-[#27272a] text-[14px] leading-relaxed")}
+              {renderBodyContent(letterBody, "text-[#27272a] text-[14px] leading-relaxed", selectedLetterLead.industry_category)}
 
               {/* Signature */}
               <div className="mt-6 text-xs text-zinc-500 leading-relaxed">

@@ -75,9 +75,26 @@ export async function initDb() {
 
   // Backfill industry_category for existing leads
   try {
-    const untaggedRes = await pool.query("SELECT id, sic_codes FROM leads WHERE industry_category IS NULL");
+    const validCategories = [
+      "Local Trades",
+      "Professional Services",
+      "Health & Wellness",
+      "Hospitality & Food",
+      "Retail & Ecommerce",
+      "Property & Construction",
+      "Manufacturing & Engineering",
+      "Transport & Logistics",
+      "Education & Training",
+      "Creative & Media",
+      "Technology",
+      "Other Local Services"
+    ];
+    const untaggedRes = await pool.query(
+      "SELECT id, sic_codes FROM leads WHERE industry_category IS NULL OR industry_category NOT IN (SELECT unnest($1::text[]))",
+      [validCategories]
+    );
     if (untaggedRes.rows.length > 0) {
-      console.log(`Backfilling industry categories for ${untaggedRes.rows.length} existing leads...`);
+      console.log(`Re-classifying industry categories for ${untaggedRes.rows.length} existing leads into 12-category schema...`);
       for (const row of untaggedRes.rows) {
         const category = getIndustryCategory(row.sic_codes);
         await pool.query("UPDATE leads SET industry_category = $1 WHERE id = $2", [category, row.id]);
@@ -151,41 +168,100 @@ initDb().then(() => {
 });
 
 /**
- * Categorizes a comma-separated list of SIC codes into 6 industry buckets
+ * Categorizes a comma-separated list of SIC codes into 12 industry buckets
  */
 export function getIndustryCategory(sicCodesStr: string | null): string {
-  if (!sicCodesStr) return "Retail / Hospitality / Everything Else";
+  if (!sicCodesStr) return "Other Local Services";
   
   const codes = sicCodesStr.split(",")
     .map(c => c.trim().replace(/\D/g, ""))
     .filter(Boolean);
     
-  if (codes.length === 0) return "Retail / Hospitality / Everything Else";
+  if (codes.length === 0) return "Other Local Services";
 
   for (const code of codes) {
-    // Trades: Builders, plumbers, electricians, landscapers, roofing, etc.
+    // 11. Technology
+    if (code.startsWith("62") || code.startsWith("63") || code.startsWith("26")) {
+      return "Technology";
+    }
+    // 1. Local Trades
     if (code.startsWith("41") || code.startsWith("42") || code.startsWith("43") || code === "81300") {
-      return "Trades";
+      return "Local Trades";
     }
-    // Property: Estate agents, letting agents, property management etc.
+    // 6. Property & Construction
     if (code.startsWith("68")) {
-      return "Property";
+      return "Property & Construction";
     }
-    // Professional Services: Accountants, consultants, surveyors, architects, engineers etc.
-    if (code.startsWith("69") || code.startsWith("71") || code.startsWith("73") || code.startsWith("74") || code.startsWith("702")) {
+    // 2. Professional Services
+    if (
+      code.startsWith("69") || 
+      code.startsWith("70") || 
+      code.startsWith("71") || 
+      code.startsWith("73") || 
+      code.startsWith("74") || 
+      code.startsWith("64") || 
+      code.startsWith("65") || 
+      code.startsWith("66") || 
+      code.startsWith("75")
+    ) {
+      // Some exceptions in 74 like photography or design can go to Creative & Media
+      if (code.startsWith("741") || code.startsWith("742")) {
+        return "Creative & Media";
+      }
       return "Professional Services";
     }
-    // Recruitment & HR: recruitment agency, HR outsourcing
-    if (code.startsWith("78")) {
-      return "Recruitment & HR";
+    // 3. Health & Wellness
+    if (
+      code.startsWith("86") || 
+      code.startsWith("87") || 
+      code.startsWith("88") || 
+      code.startsWith("93") || 
+      code.startsWith("9601") || 
+      code.startsWith("9602") || 
+      code.startsWith("9604")
+    ) {
+      return "Health & Wellness";
     }
-    // Healthcare: Dentists, therapists, clinics, care providers, etc.
-    if (code.startsWith("86") || code.startsWith("87") || code.startsWith("88")) {
-      return "Healthcare";
+    // 4. Hospitality & Food
+    if (code.startsWith("55") || code.startsWith("56")) {
+      return "Hospitality & Food";
+    }
+    // 5. Retail & Ecommerce
+    if (code.startsWith("46") || code.startsWith("47")) {
+      return "Retail & Ecommerce";
+    }
+    // 7. Manufacturing & Engineering
+    const code2 = parseInt(code.substring(0, 2), 10);
+    if (!isNaN(code2) && code2 >= 10 && code2 <= 33) {
+      return "Manufacturing & Engineering";
+    }
+    // 8. Transport & Logistics
+    if (
+      code.startsWith("49") || 
+      code.startsWith("50") || 
+      code.startsWith("51") || 
+      code.startsWith("52") || 
+      code.startsWith("53") || 
+      code.startsWith("45")
+    ) {
+      return "Transport & Logistics";
+    }
+    // 9. Education & Training
+    if (code.startsWith("85")) {
+      return "Education & Training";
+    }
+    // 10. Creative & Media
+    if (
+      code.startsWith("90") || 
+      code.startsWith("91") || 
+      code.startsWith("59") || 
+      code.startsWith("60")
+    ) {
+      return "Creative & Media";
     }
   }
 
-  return "Retail / Hospitality / Everything Else";
+  return "Other Local Services";
 }
 
 /**
