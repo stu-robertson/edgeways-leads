@@ -1,77 +1,67 @@
-import Database from "better-sqlite3";
-import path from "path";
+import { Pool } from "pg";
 import crypto from "crypto";
 
-// Path to SQLite database file
-const dbPath = path.resolve(process.cwd(), "data.db");
+// Initialize PostgreSQL connection pool
+const connectionString = process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/edgeways_leads";
 
-// Initialize database connection
-const db = new Database(dbPath, { verbose: console.log });
+const pool = new Pool({
+  connectionString,
+});
 
-// Migrate status column constraints if leads table exists and has old status values
-try {
-  const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='leads'").get();
-  if (tableCheck) {
-    const schemaRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='leads'").get() as { sql: string } | undefined;
-    if (schemaRow && schemaRow.sql.includes("'contacted'")) {
-      console.log("Migrating database leads table to support new statuses ('printed' and 'delivered')...");
-      db.transaction(() => {
-        db.exec("PRAGMA foreign_keys = OFF");
-        db.exec("ALTER TABLE leads RENAME TO leads_old");
-        db.exec(`
-          CREATE TABLE leads (
-            id TEXT PRIMARY KEY,
-            company_number TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
-            incorporation_date TEXT NOT NULL,
-            postcode TEXT,
-            address TEXT,
-            sic_codes TEXT,
-            status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'printed', 'delivered', 'interested', 'ignored')),
-            notes TEXT,
-            next_contact_date TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-          );
-        `);
-        db.exec(`
-          INSERT INTO leads (id, company_number, name, incorporation_date, postcode, address, sic_codes, status, notes, next_contact_date, created_at)
-          SELECT id, company_number, name, incorporation_date, postcode, address, sic_codes, 
-                 CASE WHEN status = 'contacted' THEN 'delivered' ELSE status END,
-                 notes, next_contact_date, created_at
-          FROM leads_old
-        `);
-        db.exec("DROP TABLE leads_old");
-        db.exec("PRAGMA foreign_keys = ON");
-      })();
-      console.log("Database migration complete!");
-    }
-  }
-} catch (migrationError) {
-  console.error("Failed to run database migration:", migrationError);
+// Initialize database tables and RLS policies (Supabase compatibility)
+export async function initDb() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS watched_locations (
+      id UUID PRIMARY KEY,
+      location TEXT UNIQUE NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS leads (
+      id UUID PRIMARY KEY,
+      company_number TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      incorporation_date DATE NOT NULL,
+      postcode TEXT,
+      address TEXT,
+      sic_codes TEXT,
+      status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'printed', 'delivered', 'interested', 'ignored')),
+      notes TEXT,
+      next_contact_date DATE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    -- Enable Row Level Security (RLS) for RLS-first design / Supabase compatibility
+    ALTER TABLE watched_locations ENABLE ROW LEVEL SECURITY;
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE tablename = 'watched_locations' AND policyname = 'allow_all_watched_locations'
+      ) THEN
+        CREATE POLICY allow_all_watched_locations ON watched_locations FOR ALL USING (true) WITH CHECK (true);
+      END IF;
+    END
+    $$;
+
+    ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE tablename = 'leads' AND policyname = 'allow_all_leads'
+      ) THEN
+        CREATE POLICY allow_all_leads ON leads FOR ALL USING (true) WITH CHECK (true);
+      END IF;
+    END
+    $$;
+  `);
 }
 
-// Initialize database tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS watched_locations (
-    id TEXT PRIMARY KEY,
-    location TEXT UNIQUE NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS leads (
-    id TEXT PRIMARY KEY,
-    company_number TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
-    incorporation_date TEXT NOT NULL,
-    postcode TEXT,
-    address TEXT,
-    sic_codes TEXT,
-    status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'printed', 'delivered', 'interested', 'ignored')),
-    notes TEXT,
-    next_contact_date TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-`);
+// Trigger initialization and log outcome
+initDb().then(() => {
+  console.log("PostgreSQL database initialization completed successfully.");
+}).catch((err) => {
+  console.error("Failed to initialize PostgreSQL database tables:", err);
+});
 
 /**
  * Generates a UUID v7 compliant string.
@@ -123,35 +113,41 @@ export interface Lead {
 // DB Operations
 
 // --- Watched Locations ---
-export function getWatchedLocations(): WatchedLocation[] {
+export async function getWatchedLocations(): Promise<WatchedLocation[]> {
   try {
-    const stmt = db.prepare("SELECT * FROM watched_locations ORDER BY location ASC");
-    return stmt.all() as WatchedLocation[];
+    const res = await pool.query(
+      "SELECT id, location, created_at::text FROM watched_locations ORDER BY location ASC"
+    );
+    return res.rows as WatchedLocation[];
   } catch (error) {
     console.error("Error fetching watched locations:", error);
     return [];
   }
 }
 
-export function addWatchedLocation(location: string): WatchedLocation {
+export async function addWatchedLocation(location: string): Promise<WatchedLocation> {
   const id = generateUUIDv7();
   const trimmed = location.trim().toUpperCase();
   try {
-    const stmt = db.prepare("INSERT INTO watched_locations (id, location) VALUES (?, ?)");
-    stmt.run(id, trimmed);
+    await pool.query(
+      "INSERT INTO watched_locations (id, location) VALUES ($1, $2)",
+      [id, trimmed]
+    );
     
-    const selectStmt = db.prepare("SELECT * FROM watched_locations WHERE id = ?");
-    return selectStmt.get(id) as WatchedLocation;
+    const res = await pool.query(
+      "SELECT id, location, created_at::text FROM watched_locations WHERE id = $1",
+      [id]
+    );
+    return res.rows[0] as WatchedLocation;
   } catch (error) {
     console.error(`Error adding watched location ${trimmed}:`, error);
     throw error;
   }
 }
 
-export function deleteWatchedLocation(id: string): void {
+export async function deleteWatchedLocation(id: string): Promise<void> {
   try {
-    const stmt = db.prepare("DELETE FROM watched_locations WHERE id = ?");
-    stmt.run(id);
+    await pool.query("DELETE FROM watched_locations WHERE id = $1", [id]);
   } catch (error) {
     console.error(`Error deleting watched location ${id}:`, error);
     throw error;
@@ -159,91 +155,100 @@ export function deleteWatchedLocation(id: string): void {
 }
 
 // --- Leads ---
-export function getLeads(): Lead[] {
+export async function getLeads(): Promise<Lead[]> {
   try {
-    const stmt = db.prepare("SELECT * FROM leads ORDER BY incorporation_date DESC, created_at DESC");
-    return stmt.all() as Lead[];
+    const res = await pool.query(
+      "SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, status, notes, next_contact_date::text, created_at::text FROM leads ORDER BY incorporation_date DESC, created_at DESC"
+    );
+    return res.rows as Lead[];
   } catch (error) {
     console.error("Error fetching leads:", error);
     return [];
   }
 }
 
-export function saveLead(lead: Omit<Lead, "id" | "created_at" | "status" | "notes" | "next_contact_date">): Lead {
+export async function saveLead(lead: Omit<Lead, "id" | "created_at" | "status" | "notes" | "next_contact_date">): Promise<Lead> {
   const id = generateUUIDv7();
   try {
-    const stmt = db.prepare(`
+    await pool.query(
+      `
       INSERT INTO leads (id, company_number, name, incorporation_date, postcode, address, sic_codes, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'new')
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'new')
       ON CONFLICT(company_number) DO UPDATE SET
-        name = excluded.name,
-        incorporation_date = excluded.incorporation_date,
-        postcode = excluded.postcode,
-        address = excluded.address,
-        sic_codes = excluded.sic_codes
-    `);
-    
-    stmt.run(
-      id,
-      lead.company_number,
-      lead.name,
-      lead.incorporation_date,
-      lead.postcode,
-      lead.address,
-      lead.sic_codes
+        name = EXCLUDED.name,
+        incorporation_date = EXCLUDED.incorporation_date,
+        postcode = EXCLUDED.postcode,
+        address = EXCLUDED.address,
+        sic_codes = EXCLUDED.sic_codes
+      `,
+      [
+        id,
+        lead.company_number,
+        lead.name,
+        lead.incorporation_date,
+        lead.postcode,
+        lead.address,
+        lead.sic_codes
+      ]
     );
 
-    const selectStmt = db.prepare("SELECT * FROM leads WHERE company_number = ?");
-    return selectStmt.get(lead.company_number) as Lead;
+    const res = await pool.query(
+      "SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, status, notes, next_contact_date::text, created_at::text FROM leads WHERE company_number = $1",
+      [lead.company_number]
+    );
+    return res.rows[0] as Lead;
   } catch (error) {
     console.error(`Error saving lead ${lead.company_number}:`, error);
     throw error;
   }
 }
 
-export function updateLead(id: string, updates: { status?: Lead["status"]; notes?: string | null; next_contact_date?: string | null }): Lead {
+export async function updateLead(id: string, updates: { status?: Lead["status"]; notes?: string | null; next_contact_date?: string | null }): Promise<Lead> {
   const fields: string[] = [];
   const params: any[] = [];
+  let paramIndex = 1;
 
   if (updates.status !== undefined) {
-    fields.push("status = ?");
+    fields.push(`status = $${paramIndex++}`);
     params.push(updates.status);
   }
 
   if (updates.notes !== undefined) {
-    fields.push("notes = ?");
+    fields.push(`notes = $${paramIndex++}`);
     params.push(updates.notes);
   }
 
   if (updates.next_contact_date !== undefined) {
-    fields.push("next_contact_date = ?");
-    params.push(updates.next_contact_date);
+    fields.push(`next_contact_date = $${paramIndex++}`);
+    params.push(updates.next_contact_date || null);
   }
 
-  if (fields.length === 0) {
-    const selectStmt = db.prepare("SELECT * FROM leads WHERE id = ?");
-    return selectStmt.get(id) as Lead;
+  if (fields.length > 0) {
+    params.push(id);
+    const sql = `UPDATE leads SET ${fields.join(", ")} WHERE id = $${paramIndex}`;
+    try {
+      await pool.query(sql, params);
+    } catch (error) {
+      console.error(`Error updating lead ${id}:`, error);
+      throw error;
+    }
   }
-
-  params.push(id);
-  const sql = `UPDATE leads SET ${fields.join(", ")} WHERE id = ?`;
 
   try {
-    const stmt = db.prepare(sql);
-    stmt.run(...params);
-
-    const selectStmt = db.prepare("SELECT * FROM leads WHERE id = ?");
-    return selectStmt.get(id) as Lead;
+    const res = await pool.query(
+      "SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, status, notes, next_contact_date::text, created_at::text FROM leads WHERE id = $1",
+      [id]
+    );
+    return res.rows[0] as Lead;
   } catch (error) {
-    console.error(`Error updating lead ${id}:`, error);
+    console.error(`Error fetching updated lead ${id}:`, error);
     throw error;
   }
 }
 
-export function deleteLead(id: string): void {
+export async function deleteLead(id: string): Promise<void> {
   try {
-    const stmt = db.prepare("DELETE FROM leads WHERE id = ?");
-    stmt.run(id);
+    await pool.query("DELETE FROM leads WHERE id = $1", [id]);
   } catch (error) {
     console.error(`Error deleting lead ${id}:`, error);
     throw error;

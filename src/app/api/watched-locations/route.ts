@@ -3,7 +3,7 @@ import { getWatchedLocations, addWatchedLocation, deleteWatchedLocation } from "
 
 export async function GET() {
   try {
-    const locations = getWatchedLocations();
+    const locations = await getWatchedLocations();
     return NextResponse.json(locations);
   } catch (error) {
     console.error("GET /api/watched-locations error:", error);
@@ -20,11 +20,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "A valid location is required" }, { status: 400 });
     }
     
-    const newLoc = addWatchedLocation(location);
+    const newLoc = await addWatchedLocation(location);
     return NextResponse.json(newLoc, { status: 201 });
   } catch (error: any) {
     console.error("POST /api/watched-locations error:", error);
-    if (error.code === "SQLITE_CONSTRAINT_UNIQUE" || error.message?.includes("UNIQUE")) {
+    if (error.code === "SQLITE_CONSTRAINT_UNIQUE" || error.code === "23505" || error.message?.includes("UNIQUE")) {
       return NextResponse.json({ error: "This location is already being watched" }, { status: 400 });
     }
     return NextResponse.json({ error: "Failed to add watched location" }, { status: 500 });
@@ -40,7 +40,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Location ID parameter is required" }, { status: 400 });
     }
     
-    deleteWatchedLocation(id);
+    await deleteWatchedLocation(id);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("DELETE /api/watched-locations error:", error);

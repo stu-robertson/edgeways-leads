@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
     const data = await response.json();
     
     // Get locally saved leads to decorate search results
-    const savedLeads = getLeads();
+    const savedLeads = await getLeads();
     const leadsMap = new Map(savedLeads.map(l => [l.company_number, l]));
     
     const items = data.items || [];

@@ -3,7 +3,7 @@ import { getLeads, saveLead, updateLead, deleteLead } from "@/lib/db";
 
 export async function GET() {
   try {
-    const leads = getLeads();
+    const leads = await getLeads();
     return NextResponse.json(leads);
   } catch (error) {
     console.error("GET /api/leads error:", error);
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing required lead fields (company_number, name, incorporation_date)" }, { status: 400 });
     }
     
-    const saved = saveLead({
+    const saved = await saveLead({
       company_number,
       name,
       incorporation_date,
@@ -49,7 +49,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Invalid lead status" }, { status: 400 });
     }
     
-    const updated = updateLead(id, {
+    const updated = await updateLead(id, {
       status,
       notes,
       next_contact_date
@@ -71,7 +71,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Lead ID is required" }, { status: 400 });
     }
     
-    deleteLead(id);
+    await deleteLead(id);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("DELETE /api/leads error:", error);
