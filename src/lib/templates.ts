@@ -9,6 +9,11 @@ export interface CategoryMetadata {
   pitchTitle: string;
 }
 
+export interface LetterCategoryCopy {
+  openingContext: string;
+  websiteReason: string;
+}
+
 export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
   "Local Trades": {
     category: "Local Trades",
@@ -26,7 +31,7 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     likelyNeeds: ["Credibility website", "Appointment booking"],
     futureNeeds: ["Client portals", "Document workflows"],
     price: 450,
-    monthlyPrice: 37.50,
+    monthlyPrice: 37.5,
     wasPrice: 1800,
     pitchTitle: "Polished Credibility Website Offer"
   },
@@ -56,7 +61,7 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     likelyNeeds: ["Ecommerce", "Websites"],
     futureNeeds: ["Stock systems", "Integrations"],
     price: 450,
-    monthlyPrice: 37.50,
+    monthlyPrice: 37.5,
     wasPrice: 1800,
     pitchTitle: "Ecommerce Starter Website Offer"
   },
@@ -66,7 +71,7 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     likelyNeeds: ["Portals", "Websites"],
     futureNeeds: ["CRM", "Workflow automation"],
     price: 500,
-    monthlyPrice: 41.50,
+    monthlyPrice: 41.5,
     wasPrice: 2000,
     pitchTitle: "Property Showcase Website Offer"
   },
@@ -86,7 +91,7 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     likelyNeeds: ["Tracking", "Scheduling"],
     futureNeeds: ["Fleet management", "Websites"],
     price: 450,
-    monthlyPrice: 37.50,
+    monthlyPrice: 37.5,
     wasPrice: 1800,
     pitchTitle: "Showcase & Operations Website Offer"
   },
@@ -116,7 +121,7 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
     likelyNeeds: ["Development partnerships", "Websites"],
     futureNeeds: ["Specialist projects"],
     price: 500,
-    monthlyPrice: 41.50,
+    monthlyPrice: 41.5,
     wasPrice: 2000,
     pitchTitle: "Technical Showcase Website Offer"
   },
@@ -132,10 +137,94 @@ export const CATEGORY_METADATA_MAP: Record<string, CategoryMetadata> = {
   }
 };
 
+export const CATEGORY_LETTER_COPY_MAP: Record<string, LetterCategoryCopy> = {
+  "Local Trades": {
+    openingContext: "I noticed that you've recently started a new trade business and just wanted to introduce myself.",
+    websiteReason:
+      "For many trades businesses, one of the first challenges is helping potential customers find you and feel confident picking up the phone. A professional website can be a great way to showcase your services, previous work and contact details from day one."
+  },
+  "Professional Services": {
+    openingContext: "I noticed that you've recently started a new professional services business and just wanted to introduce myself.",
+    websiteReason:
+      "In professional services, first impressions matter. A well-designed website can help establish credibility, explain your services clearly and give potential clients confidence in choosing you."
+  },
+  "Health & Wellness": {
+    openingContext: "I noticed that you've recently started a new health or wellness business and just wanted to introduce myself.",
+    websiteReason:
+      "When people are choosing a healthcare or wellness provider, they often want to quickly understand what services you offer and how to get in touch. A professional website can help make that process simple and straightforward."
+  },
+  "Hospitality & Food": {
+    openingContext: "I noticed that you've recently started a new hospitality or food business and just wanted to introduce myself.",
+    websiteReason:
+      "Whether customers are looking for your menu, opening hours, location or contact details, a professional website can make it much easier for people to discover your business and plan a visit."
+  },
+  "Retail & Ecommerce": {
+    openingContext: "I noticed that you've recently started a new retail or ecommerce business and just wanted to introduce myself.",
+    websiteReason:
+      "A professional website can help customers find your business, learn more about what you offer and build confidence in your brand from the outset."
+  },
+  "Property & Construction": {
+    openingContext: "I noticed that you've recently started a new property or construction business and just wanted to introduce myself.",
+    websiteReason:
+      "Whether you're showcasing developments, attracting new clients or building credibility in the local area, a professional website can be a valuable asset from the very beginning."
+  },
+  "Manufacturing & Engineering": {
+    openingContext: "I noticed that you've recently started a new manufacturing or engineering business and just wanted to introduce myself.",
+    websiteReason:
+      "Many engineering and manufacturing businesses rely on reputation, referrals and business relationships. A professional website can help reinforce that credibility and provide potential customers with a clear understanding of your capabilities."
+  },
+  "Transport & Logistics": {
+    openingContext: "I noticed that you've recently started a new transport or logistics business and just wanted to introduce myself.",
+    websiteReason:
+      "A professional website can help customers understand the services you provide, make enquiries and build confidence in your business from the outset."
+  },
+  "Education & Training": {
+    openingContext: "I noticed that you've recently started a new education or training business and just wanted to introduce myself.",
+    websiteReason:
+      "A clear, professional website can help potential learners understand what you offer, find key information and get in touch easily."
+  },
+  "Creative & Media": {
+    openingContext: "I noticed that you've recently started a new creative or media business and just wanted to introduce myself.",
+    websiteReason:
+      "For creative businesses, your website is often one of the first examples of your work that potential clients will see. A professional website can help you showcase your skills and make a strong first impression."
+  },
+  "Technology": {
+    openingContext: "I noticed that you've recently started a new technology business and just wanted to introduce myself.",
+    websiteReason:
+      "For technology businesses, a clear and professional website can help explain what you do, build credibility and give potential clients or partners confidence from the outset."
+  },
+  "Other Local Services": {
+    openingContext: "I noticed that you've recently started a new local service business and just wanted to introduce myself.",
+    websiteReason:
+      "A professional website can help customers find your business, understand what you offer and get in touch quickly when they need your services."
+  }
+};
+
+/**
+ * Converts a string to proper title case.
+ * Example: "EDGEWAYS DIGITAL LIMITED" -> "Edgeways Digital Limited"
+ */
+export function toProperCase(str: string): string {
+  if (!str) return "";
+
+  return str.toLowerCase().replace(/(^|\s)\S/g, letter => letter.toUpperCase());
+}
+
+/**
+ * Formats prices so whole pounds do not show unnecessary decimals.
+ * Example: 37.5 -> "37.50", 25 -> "25"
+ */
+export function formatPrice(price: number): string {
+  return Number.isInteger(price) ? price.toString() : price.toFixed(2);
+}
+
 /**
  * Generates the default introduction letter template for local businesses.
  */
-export const defaultLetterTemplate = (companyName: string, recipientName: string = "Business Owner") => `Dear ${recipientName},
+export const defaultLetterTemplate = (
+  companyName: string,
+  recipientName: string = "Business Owner"
+) => `Dear ${recipientName},
 
 I noticed that you've recently started a new business and just wanted to introduce myself.
 
@@ -147,224 +236,76 @@ Please note: To make sure every project gets the time and attention it deserves,
 
 [Offer Card]
 
-
 The website would be professionally designed, mobile-friendly, fully managed and include a full year of hosting at no extra cost.
 
 There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat about your plans, or if you think I might be able to help with your online presence or creating software for your business, feel free to call, email, or visit our website.
 
 Either way, I wish you every success with your new business.`;
 
-// Tailored Letter Templates by Category (Humble, Respectful, Web-First Tone)
-export const categoryLetterTemplates: Record<string, (companyName: string, recipientName: string) => string> = {
-  "Local Trades": (companyName: string, recipientName: string) => `Dear ${recipientName},
+/**
+ * Generates a tailored category letter using shared structure plus category-specific copy.
+ */
+export function generateCategoryLetterTemplate(
+  category: string,
+  companyName: string,
+  recipientName: string = "Business Owner"
+): string {
+  const metadata = CATEGORY_METADATA_MAP[category];
+  const copy = CATEGORY_LETTER_COPY_MAP[category];
 
-Congratulations on starting ${companyName}! I noticed your new business registration and wanted to introduce myself.
+  if (!metadata || !copy) {
+    return defaultLetterTemplate(companyName, recipientName);
+  }
 
-My name's Stuart and I run a small software and web development business based in Wilnecote.
+  const monthlyPrice = formatPrice(metadata.monthlyPrice);
 
-I know how demanding starting a new trade business can be, and you certainly know your trade better than anyone. I simply want to make the online side of things as easy as possible. To support local trades starting out, we're offering a clean, professional business starter website for £300 (which is 1/4 of our normal price).
+  return `Dear ${recipientName},
 
-[Offer Card]
-
-We focus on building a solid website first to give you a professional presence. Later on, as your business establishes itself, we can easily add other tools to the site if you ever need them—such as a Google Business Profile setup, professional business email, or online quote request forms.
-
-There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat about setting up a website, feel free to call, email, or visit our website.
-
-Either way, I wish you every success with your new business.`,
-
-  "Professional Services": (companyName: string, recipientName: string) => `Dear ${recipientName},
-
-Congratulations on starting ${companyName}! I noticed your new practice registration and wanted to introduce myself.
-
-My name's Stuart and I run a small software and web development business based in Wilnecote.
-
-In professional services, having a polished online presence is a key part of establishing credibility from day one. To support new firms in our area, we are offering a professional credibility website for £450 (which is 1/4 of our normal price). 
-
-[Offer Card]
-
-Our goal is simply to build you a high-quality website that represents your business beautifully. If you choose to expand your digital setup in the future, we can easily add features like client portals, online appointment scheduling, or document workflows to the site as your business grows.
-
-There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat about your website plans, feel free to call, email, or visit our website.
-
-I wish you the very best with your new firm.`,
-
-  "Health & Wellness": (companyName: string, recipientName: string) => `Dear ${recipientName},
-
-Congratulations on starting ${companyName}! I noticed your new business registration and wanted to introduce myself.
+${copy.openingContext}
 
 My name's Stuart and I run a small software and web development business based in Wilnecote.
 
-When launching in the health and wellness sector, making it straightforward for clients to find your details and get in touch is essential. To support your launch, we are offering a custom information and booking website for £400 (which is 1/4 of our normal price). 
+${copy.websiteReason}
+
+To support newly registered businesses in the area, we're offering a professional website for £${metadata.price} to businesses within their first three months of trading (1/4 of our normal price).
+
+Please note: To make sure every project gets the time and attention it deserves, we limit the number of these websites we take on each month.
 
 [Offer Card]
 
-Our initial focus is purely on getting you set up with a professional, easy-to-use website. If you ever need them down the line, we can easily expand the site to include features like membership portals, client record systems, or recurring booking tools.
+The website would be professionally designed, mobile-friendly, fully managed and include a full year of hosting at no extra cost.
 
-There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat about your website, feel free to call, email, or visit our website.
+There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat about your plans, or if you think I might be able to help with your online presence or creating software for your business, feel free to call, email, or visit our website.
 
-I wish you every success with your new practice.`,
-
-  "Hospitality & Food": (companyName: string, recipientName: string) => `Dear ${recipientName},
-
-Congratulations on starting ${companyName}! I noticed your new venture and wanted to introduce myself.
-
-My name's Stuart and I run a small software and web development business based in Wilnecote.
-
-In hospitality, having a clear online menu or landing page is a great way to welcome customers. To help you get started, we are offering a custom menu and reservation website for £350 (which is 1/4 of our normal price). 
-
-[Offer Card]
-
-We focus on building a professional showcase website for your business first. If you decide to add other services later, we can easily integrate commission-free online ordering, reservation systems, or event bookings directly into your website.
-
-There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat about your website, feel free to call, email, or visit our website.
-
-I wish you every success with your new opening.`,
-
-  "Retail & Ecommerce": (companyName: string, recipientName: string) => `Dear ${recipientName},
-
-Congratulations on starting ${companyName}! I noticed your new retail business and wanted to introduce myself.
-
-My name's Stuart and I run a small software and web development business based in Wilnecote.
-
-To help you establish your new store online, we are offering an ecommerce starter website for £450 (which is 1/4 of our normal price). This provides a polished online storefront where you can showcase products and accept secure payments from day one.
-
-[Offer Card]
-
-We start with a clean online shop to get you selling. As your sales and inventory grow, we can add features like automated stock sync, wholesale portals, or marketplace integrations later if you ever need them.
-
-There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat about setting up your online shop, feel free to call, email, or visit our website.
-
-I wish you all the best with your new store.`,
-
-  "Property & Construction": (companyName: string, recipientName: string) => `Dear ${recipientName},
-
-Congratulations on starting ${companyName}! I noticed your new business registration and wanted to introduce myself.
-
-My name's Stuart and I run a small software and web development business based in Wilnecote.
-
-For property and construction businesses, showcasing your listings or past builds online is a great way to build trust. To help you launch, we are offering a property showcase website for £500 (which is 1/4 of our normal price). 
-
-[Offer Card]
-
-Our goal is to deliver a high-quality showcase site to get your brand established. As your portfolio grows, we can easily add advanced features like landlord/tenant portals, CRM integrations, or project tracking tools to your website.
-
-There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat, feel free to call, email, or visit our website.
-
-I wish you every success with your new business.`,
-
-  "Manufacturing & Engineering": (companyName: string, recipientName: string) => `Dear ${recipientName},
-
-Congratulations on starting ${companyName}! I noticed your new business registration and wanted to introduce myself.
-
-My name's Stuart and I run a small software and web development business based in Wilnecote.
-
-For engineering and manufacturing firms, presenting your technical capabilities clearly online is key to attracting industrial partners. We are offering a technical capability and info website for £600 (which is 1/4 of our normal price) to establish your digital presence.
-
-[Offer Card]
-
-We focus on building a robust capability website first. Down the line, if you ever need to automate processes, we can easily build custom quoting engines, order trackers, or internal workflow tools and connect them to your site.
-
-There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat, feel free to call, email, or visit our website.
-
-I wish you the very best with your new firm.`,
-
-  "Transport & Logistics": (companyName: string, recipientName: string) => `Dear ${recipientName},
-
-Congratulations on starting ${companyName}! I noticed your new transport business and wanted to introduce myself.
-
-My name's Stuart and I run a small software and web development business based in Wilnecote.
-
-To help your new logistics or transport business establish a professional presence, we are offering a transport showcase and operations query website for £450 (which is 1/4 of our normal price) to capture service requests and inquiries.
-
-[Offer Card]
-
-Our priority is getting you set up with a professional website. As your operations expand, we can easily add operational features—such as shipment tracking forms, driver schedules, or fleet databases—to your site in the future.
-
-There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat about your website, feel free to call, email, or visit our website.
-
-I wish you every success with your new operations.`,
-
-  "Education & Training": (companyName: string, recipientName: string) => `Dear ${recipientName},
-
-Congratulations on starting ${companyName}! I noticed your new training/education venture and wanted to introduce myself.
-
-My name's Stuart and I run a small software and web development business based in Wilnecote.
-
-For education, coaching, and training businesses, a clear website is a great way to present your courses or booking options. We are offering a training and booking website for £400 (which is 1/4 of our normal price) to help you get started.
-
-[Offer Card]
-
-We start with a professional info site to get you launched. If you choose to expand your digital offerings in the future, we can add learning portals, class schedules, or online student modules later as you grow.
-
-There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat, feel free to call, email, or visit our website.
-
-I wish you the very best with your new venture.`,
-
-  "Creative & Media": (companyName: string, recipientName: string) => `Dear ${recipientName},
-
-Congratulations on starting ${companyName}! I noticed your new creative venture and wanted to introduce myself.
-
-My name's Stuart and I run a small software and web development business based in Wilnecote.
-
-In creative and media sectors, your website is the perfect canvas to display your projects. To help you launch, we are offering a high-impact portfolio website for £350 (which is 1/4 of our normal price) to showcase your work in style.
-
-[Offer Card]
-
-We focus on building a beautiful portfolio site first. As your client list grows, we can add tools like client proofing galleries, project delivery portals, or automated billing forms later on.
-
-There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat, feel free to call, email, or visit our website.
-
-I wish you every success with your new studio.`,
-
-  "Technology": (companyName: string, recipientName: string) => `Dear ${recipientName},
-
-Congratulations on starting ${companyName}! As a fellow technology business in the local area, I wanted to introduce myself.
-
-My name's Stuart and I run a small software and web development business based in Wilnecote.
-
-To help you establish local presence and showcase your technical capabilities, we are offering a professional technical showcase website for £500 (which is 1/4 of our normal price).
-
-[Offer Card]
-
-Our goal is simply to build you a clean, professional website. If you ever need integration assistance, custom API setups, or specialist software engineering partnerships in the future, we would be delighted to discuss them as your business grows.
-
-There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat, feel free to call, email, or visit our website.
-
-I wish you every success with your tech venture.`,
-
-  "Other Local Services": (companyName: string, recipientName: string) => `Dear ${recipientName},
-
-Congratulations on starting ${companyName}! I noticed your new business and wanted to introduce myself.
-
-My name's Stuart and I run a small software and web development business based in Wilnecote.
-
-To help your new service business get off to a great start, we are offering a professional business starter website for £300 (which is 1/4 of our normal price) to help clients find you and get in touch.
-
-[Offer Card]
-
-We focus on delivering a high-quality website first. If you want to expand your setup later on, we can easily add features like Google Business Profile registrations, professional email addresses, or booking inquiry forms as your business scales.
-
-There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat about your website, feel free to call, email, or visit our website.
-
-Either way, I wish you every success with your new business.`
-};
+Either way, I wish you every success with your new business.`;
+}
 
 /**
- * Converts a string to proper title case (e.g. "EDGEWAYS DIGITAL LIMITED" to "Edgeways Digital Limited").
+ * Backwards-compatible map in case existing code expects categoryLetterTemplates[category](...).
  */
-export function toProperCase(str: string): string {
-  if (!str) return "";
-  return str.toLowerCase().replace(/(^|\s)\S/g, l => l.toUpperCase());
-}
+export const categoryLetterTemplates: Record<
+  string,
+  (companyName: string, recipientName: string) => string
+> = Object.keys(CATEGORY_METADATA_MAP).reduce((templates, category) => {
+  templates[category] = (companyName: string, recipientName: string) =>
+    generateCategoryLetterTemplate(category, companyName, recipientName);
+
+  return templates;
+}, {} as Record<string, (companyName: string, recipientName: string) => string>);
 
 /**
  * Returns the tailored letter template body based on category.
  */
-export function getLetterTemplate(category: string, companyName: string, recipientGreetingName: string = "Business Owner"): string {
+export function getLetterTemplate(
+  category: string,
+  companyName: string,
+  recipientGreetingName: string = "Business Owner"
+): string {
   const cleanCompanyName = toProperCase(companyName);
-  const templateFn = categoryLetterTemplates[category];
-  if (templateFn) {
-    return templateFn(cleanCompanyName, recipientGreetingName);
+
+  if (CATEGORY_METADATA_MAP[category] && CATEGORY_LETTER_COPY_MAP[category]) {
+    return generateCategoryLetterTemplate(category, cleanCompanyName, recipientGreetingName);
   }
+
   return defaultLetterTemplate(cleanCompanyName, recipientGreetingName);
 }
