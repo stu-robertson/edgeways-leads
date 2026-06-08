@@ -1172,7 +1172,7 @@ export default function Home() {
                                 <svg className="h-4.5 w-4.5 text-slate-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                                 </svg>
-                                <span className="text-xs text-slate-300">Initial Offer: <span className="text-indigo-400 font-semibold">{CATEGORY_METADATA_MAP[company.industry_category].pitchTitle.replace(" Offer", "")} (£{CATEGORY_METADATA_MAP[company.industry_category].price})</span></span>
+                                <span className="text-xs text-slate-300">Initial Offer: <span className="text-indigo-400 font-semibold">Website (£300)</span></span>
                               </div>
                             </>
                           )}
@@ -1436,7 +1436,7 @@ export default function Home() {
                             <div className="mt-3 space-y-1.5 border-t border-slate-850/30 pt-3">
                               <p className="text-[11.5px] text-slate-400 leading-normal">
                                 <span className="text-slate-500 font-medium block uppercase tracking-wider text-[9px] mb-1">Initial Service Offer</span>
-                                <span className="text-indigo-300 font-semibold">{CATEGORY_METADATA_MAP[lead.industry_category].pitchTitle.replace(" Offer", "")} (£{CATEGORY_METADATA_MAP[lead.industry_category].price})</span>
+                                <span className="text-indigo-300 font-semibold">Website (£300)</span>
                               </p>
                               {lead.delivery_date && lead.status === 'delivered' && (
                                 <p className="text-emerald-400 text-xs font-bold flex items-center gap-1.5">
