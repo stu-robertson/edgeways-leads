@@ -14,7 +14,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { company_number, name, incorporation_date, postcode, address, sic_codes } = body;
+    const { company_number, name, incorporation_date, postcode, address, sic_codes, status } = body;
     
     if (!company_number || !name || !incorporation_date) {
       return NextResponse.json({ error: "Missing required lead fields (company_number, name, incorporation_date)" }, { status: 400 });
@@ -78,7 +78,8 @@ export async function POST(req: NextRequest) {
       address: address || null,
       sic_codes: sic_codes || null,
       industry_category,
-      directors
+      directors,
+      status: status || 'new'
     });
     
     return NextResponse.json(saved, { status: 201 });
@@ -91,13 +92,26 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
-    const { id, status, notes, next_contact_date, delivery_date } = body;
+    const { 
+      id, status, notes, next_contact_date, delivery_date,
+      base_version, category_variant, full_template_key, offer_price,
+      printed_date, first_response_date, first_call_date, meeting_booked_date,
+      meeting_completed_date, proposal_sent_date, follow_up_sent_date, won_date,
+      lost_date, not_suitable_date, no_response_date, outcome_reason, outcome_reason_other,
+      phone, email, contact_name
+    } = body;
     
     if (!id) {
       return NextResponse.json({ error: "Lead ID is required" }, { status: 400 });
     }
     
-    if (status !== undefined && !['new', 'printed', 'delivered', 'interested', 'meeting', 'quote', 'won', 'lost'].includes(status)) {
+    const validStatuses = [
+      'new', 'printed', 'delivered', 'responded', 'first_call', 'meeting_booked', 
+      'meeting_completed', 'proposal_sent', 'follow_up_sent', 'won', 'lost', 
+      'not_suitable', 'no_response'
+    ];
+    
+    if (status !== undefined && !validStatuses.includes(status)) {
       return NextResponse.json({ error: "Invalid lead status" }, { status: 400 });
     }
     
@@ -105,7 +119,27 @@ export async function PUT(req: NextRequest) {
       status,
       notes,
       next_contact_date,
-      delivery_date
+      delivery_date,
+      base_version,
+      category_variant,
+      full_template_key,
+      offer_price,
+      printed_date,
+      first_response_date,
+      first_call_date,
+      meeting_booked_date,
+      meeting_completed_date,
+      proposal_sent_date,
+      follow_up_sent_date,
+      won_date,
+      lost_date,
+      not_suitable_date,
+      no_response_date,
+      outcome_reason,
+      outcome_reason_other,
+      phone,
+      email,
+      contact_name
     });
     
     return NextResponse.json(updated);

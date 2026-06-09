@@ -88,7 +88,7 @@ export async function GET(req: NextRequest) {
         lead_notes: localLead ? localLead.notes : null,
         lead_next_contact_date: localLead ? localLead.next_contact_date : null
       };
-    });
+    }).filter((item: any) => !item.is_saved);
     
     return NextResponse.json({ items: decoratedItems });
   } catch (error) {

@@ -19,11 +19,44 @@ interface Lead {
   sic_codes: string | null;
   industry_category: string | null;
   directors: { name: string; address: string }[] | null;
-  status: 'new' | 'printed' | 'delivered' | 'interested' | 'meeting' | 'quote' | 'won' | 'lost';
+  status: 'new' | 'printed' | 'delivered' | 'responded' | 'first_call' | 'meeting_booked' | 'meeting_completed' | 'proposal_sent' | 'follow_up_sent' | 'won' | 'lost' | 'not_suitable' | 'no_response';
   notes: string | null;
   next_contact_date: string | null;
+  phone: string | null;
+  email: string | null;
+  contact_name: string | null;
   delivery_date: string | null;
+  base_version: string | null;
+  category_variant: string | null;
+  full_template_key: string | null;
+  offer_price: number | null;
+  printed_date: string | null;
+  first_response_date: string | null;
+  first_call_date: string | null;
+  meeting_booked_date: string | null;
+  meeting_completed_date: string | null;
+  proposal_sent_date: string | null;
+  follow_up_sent_date: string | null;
+  won_date: string | null;
+  lost_date: string | null;
+  not_suitable_date: string | null;
+  no_response_date: string | null;
+  outcome_reason: string | null;
+  outcome_reason_other: string | null;
   created_at: string;
+}
+
+interface Milestone {
+  id: string;
+  title: string;
+  type: 'activity' | 'conversion' | 'revenue' | 'category';
+  metric: string;
+  target_value: number;
+  current_value?: number;
+  reward: string | null;
+  completed_date: string | null;
+  celebration_notes: string | null;
+  archived?: boolean;
 }
 
 interface DiscoveredCompany {
@@ -126,7 +159,7 @@ const renderBodyContent = (bodyText: string, textClassName: string, category: st
 
 const MapComponent = ({ leads, onUpdateStatus, onPrintMap }: {
   leads: Lead[];
-  onUpdateStatus: (id: string, name: string, status: Lead["status"]) => Promise<void>;
+  onUpdateStatus: (id: string, name: string, status: Lead["status"]) => void | Promise<void>;
   onPrintMap: () => void;
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -429,9 +462,50 @@ const MapComponent = ({ leads, onUpdateStatus, onPrintMap }: {
 
 export default function Home() {
   // Navigation & Filters
-  const [selectedTab, setSelectedTab] = useState<'find' | 'crm' | 'map'>('find');
+  const [selectedTab, setSelectedTab] = useState<'find' | 'crm' | 'map' | 'performance' | 'milestones'>('find');
   const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | '7days' | '30days'>('7days');
-  const [crmStatusFilter, setCrmStatusFilter] = useState<'all' | 'new' | 'printed' | 'delivered' | 'interested' | 'meeting' | 'quote' | 'won' | 'lost'>('all');
+  const [crmStatusFilter, setCrmStatusFilter] = useState<'all' | 'new' | 'printed' | 'delivered' | 'responded' | 'first_call' | 'meeting_booked' | 'meeting_completed' | 'proposal_sent' | 'follow_up_sent' | 'won' | 'lost' | 'not_suitable' | 'no_response'>('all');
+
+  // Milestones Tab State
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [loadingMilestones, setLoadingMilestones] = useState(false);
+  const [milestoneFilter, setMilestoneFilter] = useState<'incomplete' | 'completed' | 'all'>('incomplete');
+
+  // Milestone creation/editing configuration modal state
+  const [isMilestoneModalOpen, setIsMilestoneModalOpen] = useState(false);
+  const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
+  const [mFormTitle, setMFormTitle] = useState("");
+  const [mFormType, setMFormType] = useState<'activity' | 'conversion' | 'revenue' | 'category'>('activity');
+  const [mFormMetric, setMFormMetric] = useState("letters_delivered");
+  const [mFormTargetValue, setMFormTargetValue] = useState(10);
+  const [mFormReward, setMFormReward] = useState("");
+  const [mFormArchived, setMFormArchived] = useState(false);
+  const [mFormCelebrationNotes, setMFormCelebrationNotes] = useState("");
+
+  // CRM Leads Filtering, Sorting, Pagination, Inline Contact Editing state
+  const [crmHideNegativeOutcomes, setCrmHideNegativeOutcomes] = useState(true);
+  const [crmSortOrder, setCrmSortOrder] = useState<'incorporation_desc' | 'incorporation_asc' | 'name_asc' | 'next_contact_asc' | 'created_desc'>('incorporation_desc');
+  const [crmPageSize, setCrmPageSize] = useState(50);
+  const [crmCurrentPage, setCrmCurrentPage] = useState(1);
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [editingPhone, setEditingPhone] = useState("");
+  const [editingEmail, setEditingEmail] = useState("");
+  const [editingContactName, setEditingContactName] = useState("");
+
+  // Unified Status Change date/notes/outcome picker modal state
+  const [statusModalLead, setStatusModalLead] = useState<{ id: string; name: string; targetStatus: Lead['status']; currentStatus: Lead['status'] } | null>(null);
+  const [selectedStatusDate, setSelectedStatusDate] = useState("");
+  const [outcomeReason, setOutcomeReason] = useState("");
+  const [outcomeReasonOther, setOutcomeReasonOther] = useState("");
+  const [wonDealValue, setWonDealValue] = useState(300);
+
+  // Performance Tab Filters State
+  const [perfFilterDateStart, setPerfFilterDateStart] = useState("");
+  const [perfFilterDateEnd, setPerfFilterDateEnd] = useState("");
+  const [perfFilterCategory, setPerfFilterCategory] = useState("all");
+  const [perfFilterTemplate, setPerfFilterTemplate] = useState("all");
+  const [perfFilterPriceMin, setPerfFilterPriceMin] = useState(0);
+  const [perfFilterPriceMax, setPerfFilterPriceMax] = useState(1000);
 
   // Delivery date prompt state
   const [deliveryDatePromptLead, setDeliveryDatePromptLead] = useState<{ id: string; name: string } | null>(null);
@@ -559,11 +633,171 @@ export default function Home() {
     }
   }, [triggerAlert]);
 
+  const fetchMilestones = useCallback(async () => {
+    setLoadingMilestones(true);
+    try {
+      const res = await fetch("/api/milestones");
+      if (!res.ok) throw new Error("Failed to load milestones");
+      const data = await res.json();
+      setMilestones(data);
+    } catch (err) {
+      console.error(err);
+      triggerAlert("Could not load motivation milestones", "error");
+    } finally {
+      setLoadingMilestones(false);
+    }
+  }, [triggerAlert]);
+
   // Initial load
   useEffect(() => {
     fetchLocations();
     fetchLeads();
-  }, [fetchLocations, fetchLeads]);
+    fetchMilestones();
+  }, [fetchLocations, fetchLeads, fetchMilestones]);
+
+  // Save Phone & Email for Lead inline
+  const handleSaveContactInfo = async (id: string) => {
+    try {
+      const res = await fetch("/api/leads", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          phone: editingPhone,
+          email: editingEmail,
+          contact_name: editingContactName
+        })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to save contact info");
+      }
+
+      setLeads(prev => prev.map(l => l.id === id ? { ...l, phone: editingPhone, email: editingEmail, contact_name: editingContactName } : l));
+      setEditingContactId(null);
+      triggerAlert("Contact info updated successfully", "success");
+    } catch (err: any) {
+      triggerAlert(err.message || "Failed to update contact info", "error");
+    }
+  };
+
+  // Archive / Unarchive Milestone
+  const handleArchiveMilestone = async (id: string, archived: boolean) => {
+    try {
+      const res = await fetch("/api/milestones", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, archived })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update archive status");
+      }
+
+      const updated = await res.json();
+      setMilestones(prev => prev.map(m => m.id === id ? updated : m));
+      triggerAlert(archived ? "Milestone archived" : "Milestone unarchived", "success");
+    } catch (err: any) {
+      triggerAlert(err.message || "Failed to update archive status", "error");
+    }
+  };
+
+  // Milestone modal control
+  const handleOpenMilestoneModal = (milestone: Milestone | null) => {
+    setEditingMilestone(milestone);
+    if (milestone) {
+      setMFormTitle(milestone.title);
+      setMFormType(milestone.type);
+      setMFormMetric(milestone.metric);
+      setMFormTargetValue(milestone.target_value);
+      setMFormReward(milestone.reward || "");
+      setMFormArchived(milestone.archived || false);
+      setMFormCelebrationNotes(milestone.celebration_notes || "");
+    } else {
+      setMFormTitle("");
+      setMFormType("activity");
+      setMFormMetric("letters_delivered");
+      setMFormTargetValue(10);
+      setMFormReward("");
+      setMFormArchived(false);
+      setMFormCelebrationNotes("");
+    }
+    setIsMilestoneModalOpen(true);
+  };
+
+  // Milestone Save config (Creation / Editing)
+  const handleSaveMilestoneConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mFormTitle.trim()) {
+      triggerAlert("Title is required", "warning");
+      return;
+    }
+
+    try {
+      const payload = {
+        id: editingMilestone ? editingMilestone.id : undefined,
+        title: mFormTitle.trim(),
+        type: mFormType,
+        metric: mFormMetric,
+        target_value: Number(mFormTargetValue),
+        reward: mFormReward.trim() || null,
+        archived: mFormArchived,
+        celebration_notes: mFormCelebrationNotes.trim() || null,
+        completed_date: editingMilestone ? editingMilestone.completed_date : null
+      };
+
+      const endpoint = "/api/milestones";
+      const method = editingMilestone ? "PUT" : "POST";
+
+      const res = await fetch(endpoint, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to save milestone");
+      }
+
+      const saved = await res.json();
+      
+      if (editingMilestone) {
+        setMilestones(prev => prev.map(m => m.id === editingMilestone.id ? { ...m, ...saved } : m));
+        triggerAlert("Milestone updated successfully", "success");
+      } else {
+        setMilestones(prev => [...prev, saved]);
+        triggerAlert("Milestone created successfully", "success");
+      }
+      setIsMilestoneModalOpen(false);
+      setEditingMilestone(null);
+    } catch (err: any) {
+      triggerAlert(err.message || "Failed to save milestone config", "error");
+    }
+  };
+
+  const handleDeleteMilestone = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this milestone?")) return;
+    try {
+      const res = await fetch(`/api/milestones?id=${id}`, {
+        method: "DELETE"
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to delete milestone");
+      }
+
+      setMilestones(prev => prev.filter(m => m.id !== id));
+      triggerAlert("Milestone deleted", "success");
+      setIsMilestoneModalOpen(false);
+      setEditingMilestone(null);
+    } catch (err: any) {
+      triggerAlert(err.message || "Failed to delete milestone", "error");
+    }
+  };
 
   // Helper: Format YYYY-MM-DD Date
   const formatDate = (dateStr: string) => {
@@ -649,14 +883,8 @@ export default function Home() {
       // Refresh leads list
       await fetchLeads();
       
-      // Update item in discovery view
-      setDiscoveredCompanies(prev => 
-        prev.map(c => 
-          c.company_number === company.company_number 
-            ? { ...c, is_saved: true, lead_id: data.id, lead_status: 'new' }
-            : c
-        )
-      );
+      // Remove item from discovery view so it disappears
+      setDiscoveredCompanies(prev => prev.filter(c => c.company_number !== company.company_number));
 
       triggerAlert(`Started tracking "${company.name}"`, "success");
     } catch (err: any) {
@@ -664,57 +892,144 @@ export default function Home() {
     }
   };
 
-  // Update CRM Lead Status
-  const handleUpdateStatus = async (id: string, name: string, status: Lead["status"]) => {
-    if (status === 'delivered') {
-      setDeliveryDatePromptLead({ id, name });
-      setSelectedDeliveryDate(new Date().toISOString().split("T")[0]);
-      return;
-    }
+  // Mark Company as Unsuitable directly
+  const handleMarkUnsuitable = async (company: DiscoveredCompany) => {
     try {
       const res = await fetch("/api/leads", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status })
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to update status");
-      }
-
-      setLeads(prev => prev.map(l => l.id === id ? { ...l, status } : l));
-      triggerAlert(`Updated "${name}" status to ${status}`, "success");
-    } catch (err: any) {
-      triggerAlert(err.message || "Failed to update status", "error");
-    }
-  };
-
-  // Save Delivery Date for Lead (compulsory prompt handler)
-  const handleSaveDeliveryDate = async () => {
-    if (!deliveryDatePromptLead) return;
-    const { id, name } = deliveryDatePromptLead;
-    try {
-      const res = await fetch("/api/leads", {
-        method: "PUT",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id,
-          status: 'delivered',
-          delivery_date: selectedDeliveryDate || new Date().toISOString().split("T")[0]
+          company_number: company.company_number,
+          name: company.name,
+          incorporation_date: company.incorporation_date,
+          postcode: company.postcode,
+          address: company.address,
+          sic_codes: company.sic_codes,
+          status: 'not_suitable'
         })
       });
 
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to log delivery date");
+        throw new Error(data.error || "Failed to mark as unsuitable");
       }
 
-      setLeads(prev => prev.map(l => l.id === id ? { ...l, status: 'delivered', delivery_date: selectedDeliveryDate } : l));
-      setDeliveryDatePromptLead(null);
-      triggerAlert(`Marked "${name}" as delivered on ${formatDate(selectedDeliveryDate)}`, "success");
+      // Refresh leads list
+      await fetchLeads();
+      
+      // Remove item from discovery view so it disappears
+      setDiscoveredCompanies(prev => prev.filter(c => c.company_number !== company.company_number));
+
+      triggerAlert(`Marked "${company.name}" as unsuitable`, "success");
     } catch (err: any) {
-      triggerAlert(err.message || "Failed to log delivery date", "error");
+      triggerAlert(err.message || "Failed to mark as unsuitable", "error");
+    }
+  };
+
+  // Helper to get preceding status date for "Same as previous step" feature
+  const getPrecedingStatusDate = (lead: Lead, targetStatus: Lead["status"]) => {
+    const order: { status: Lead["status"]; key: keyof Lead }[] = [
+      { status: 'printed', key: 'printed_date' },
+      { status: 'delivered', key: 'delivery_date' },
+      { status: 'responded', key: 'first_response_date' },
+      { status: 'first_call', key: 'first_call_date' },
+      { status: 'meeting_booked', key: 'meeting_booked_date' },
+      { status: 'meeting_completed', key: 'meeting_completed_date' },
+      { status: 'proposal_sent', key: 'proposal_sent_date' },
+      { status: 'follow_up_sent', key: 'follow_up_sent_date' },
+      { status: 'won', key: 'won_date' },
+      { status: 'lost', key: 'lost_date' },
+      { status: 'not_suitable', key: 'not_suitable_date' },
+      { status: 'no_response', key: 'no_response_date' }
+    ];
+
+    const targetIndex = order.findIndex(o => o.status === targetStatus);
+    if (targetIndex <= 0) return null;
+
+    for (let i = targetIndex - 1; i >= 0; i--) {
+      const val = lead[order[i].key];
+      if (val) return val as string;
+    }
+    return null;
+  };
+
+  // Update CRM Lead Status (opens modal/prompts for details)
+  const handleUpdateStatus = (id: string, name: string, status: Lead["status"]) => {
+    const lead = leads.find(l => l.id === id);
+    if (!lead) return;
+    
+    setStatusModalLead({ id, name, targetStatus: status, currentStatus: lead.status });
+    setSelectedStatusDate(new Date().toISOString().split("T")[0]);
+    setOutcomeReason("");
+    setOutcomeReasonOther("");
+    setWonDealValue(lead.offer_price || 300);
+  };
+
+  // Save detailed status change (from modal)
+  const handleSaveStatusDetails = async () => {
+    if (!statusModalLead) return;
+    const { id, name, targetStatus } = statusModalLead;
+    const lead = leads.find(l => l.id === id);
+    if (!lead) return;
+
+    const dateKeyMap: Record<Lead["status"], keyof Lead | null> = {
+      new: null,
+      printed: "printed_date",
+      delivered: "delivery_date",
+      responded: "first_response_date",
+      first_call: "first_call_date",
+      meeting_booked: "meeting_booked_date",
+      meeting_completed: "meeting_completed_date",
+      proposal_sent: "proposal_sent_date",
+      follow_up_sent: "follow_up_sent_date",
+      won: "won_date",
+      lost: "lost_date",
+      not_suitable: "not_suitable_date",
+      no_response: "no_response_date"
+    };
+
+    const dateField = dateKeyMap[targetStatus];
+    const payload: any = {
+      id,
+      status: targetStatus
+    };
+
+    if (dateField && selectedStatusDate) {
+      payload[dateField] = selectedStatusDate;
+    }
+
+    if (['lost', 'not_suitable', 'no_response'].includes(targetStatus)) {
+      payload.outcome_reason = outcomeReason;
+      if (outcomeReason === 'Other') {
+        payload.outcome_reason_other = outcomeReasonOther;
+      }
+    }
+
+    if (targetStatus === 'won') {
+      payload.offer_price = Number(wonDealValue);
+    }
+
+    try {
+      const res = await fetch("/api/leads", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update status details");
+      }
+
+      const updatedLead = await res.json();
+      setLeads(prev => prev.map(l => l.id === id ? { ...l, ...updatedLead } : l));
+      setStatusModalLead(null);
+      triggerAlert(`Updated "${name}" status to ${targetStatus}`, "success");
+      
+      // Refresh milestones calculation in background
+      fetchMilestones();
+    } catch (err: any) {
+      triggerAlert(err.message || "Failed to update status details", "error");
     }
   };
 
@@ -874,8 +1189,127 @@ export default function Home() {
 
   // Filtered CRM Leads
   const filteredLeads = leads.filter(l => {
-    if (crmStatusFilter === "all") return true;
+    if (crmStatusFilter === "all") {
+      if (crmHideNegativeOutcomes && ['lost', 'not_suitable', 'no_response'].includes(l.status)) {
+        return false;
+      }
+      return true;
+    }
     return l.status === crmStatusFilter;
+  });
+
+  // Sorted CRM Leads
+  const sortedLeads = [...filteredLeads].sort((a, b) => {
+    if (crmSortOrder === 'incorporation_desc') {
+      return new Date(b.incorporation_date).getTime() - new Date(a.incorporation_date).getTime();
+    }
+    if (crmSortOrder === 'incorporation_asc') {
+      return new Date(a.incorporation_date).getTime() - new Date(b.incorporation_date).getTime();
+    }
+    if (crmSortOrder === 'name_asc') {
+      return a.name.localeCompare(b.name);
+    }
+    if (crmSortOrder === 'next_contact_asc') {
+      if (!a.next_contact_date) return 1;
+      if (!b.next_contact_date) return -1;
+      return new Date(a.next_contact_date).getTime() - new Date(b.next_contact_date).getTime();
+    }
+    if (crmSortOrder === 'created_desc') {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+    return 0;
+  });
+
+  // Paginated CRM Leads
+  const totalPages = Math.ceil(sortedLeads.length / crmPageSize) || 1;
+  const currentPageSafe = Math.min(crmCurrentPage, totalPages);
+  const startIndex = (currentPageSafe - 1) * crmPageSize;
+  const paginatedLeads = sortedLeads.slice(startIndex, startIndex + crmPageSize);
+
+  // Performance Analytics computations
+  const perfFilteredLeads = leads.filter(l => {
+    if (perfFilterDateStart && l.delivery_date) {
+      if (new Date(l.delivery_date) < new Date(perfFilterDateStart)) return false;
+    }
+    if (perfFilterDateEnd && l.delivery_date) {
+      if (new Date(l.delivery_date) > new Date(perfFilterDateEnd)) return false;
+    }
+    if (perfFilterCategory !== "all" && l.industry_category !== perfFilterCategory) {
+      return false;
+    }
+    if (perfFilterTemplate !== "all" && l.base_version !== perfFilterTemplate) {
+      return false;
+    }
+    const offerVal = l.offer_price || 300;
+    if (offerVal < perfFilterPriceMin || offerVal > perfFilterPriceMax) {
+      return false;
+    }
+    return true;
+  });
+
+  const perfDeliveredCount = perfFilteredLeads.filter(l => l.delivery_date !== null || l.status === 'delivered').length;
+  
+  const hasResponded = (l: Lead) => l.first_response_date !== null || !['new', 'printed', 'delivered'].includes(l.status);
+  const perfResponseCount = perfFilteredLeads.filter(hasResponded).length;
+  
+  const hasBookedMeeting = (l: Lead) => l.meeting_booked_date !== null || !['new', 'printed', 'delivered', 'responded', 'first_call'].includes(l.status);
+  const perfMeetingCount = perfFilteredLeads.filter(hasBookedMeeting).length;
+  
+  const hasSentProposal = (l: Lead) => l.proposal_sent_date !== null || ['proposal_sent', 'follow_up_sent', 'won'].includes(l.status);
+  const perfProposalCount = perfFilteredLeads.filter(hasSentProposal).length;
+  
+  const perfWonCount = perfFilteredLeads.filter(l => l.status === 'won').length;
+  
+  const responseRate = perfDeliveredCount > 0 ? Math.round((perfResponseCount / perfDeliveredCount) * 100) : 0;
+  const meetingRate = perfResponseCount > 0 ? Math.round((perfMeetingCount / perfResponseCount) * 100) : 0;
+  const proposalRate = perfMeetingCount > 0 ? Math.round((perfProposalCount / perfMeetingCount) * 100) : 0;
+  const winRate = perfDeliveredCount > 0 ? Math.round((perfWonCount / perfDeliveredCount) * 100) : 0;
+  
+  const perfTotalRevenue = perfFilteredLeads.filter(l => l.status === 'won').reduce((sum, l) => sum + (l.offer_price || 300), 0);
+  const perfMrr = perfWonCount * 25;
+
+  const getAverageDays = (startField: keyof Lead, endField: keyof Lead) => {
+    let sum = 0;
+    let count = 0;
+    perfFilteredLeads.forEach(l => {
+      const start = l[startField];
+      const end = l[endField];
+      if (start && end) {
+        const diff = new Date(end as string).getTime() - new Date(start as string).getTime();
+        const days = Math.round(diff / (1000 * 60 * 60 * 24));
+        if (days >= 0) {
+          sum += days;
+          count++;
+        }
+      }
+    });
+    return count > 0 ? Math.round((sum / count) * 10) / 10 : null;
+  };
+
+  const avgDaysToRespond = getAverageDays("delivery_date", "first_response_date");
+  const avgDaysToWin = getAverageDays("delivery_date", "won_date");
+
+  // Template variations performance breakdown
+  const templateBreakdown: Record<string, { total: number; responded: number; won: number }> = {};
+  leads.forEach(l => {
+    if (l.base_version) {
+      const key = l.base_version;
+      if (!templateBreakdown[key]) {
+        templateBreakdown[key] = { total: 0, responded: 0, won: 0 };
+      }
+      templateBreakdown[key].total++;
+      if (hasResponded(l)) templateBreakdown[key].responded++;
+      if (l.status === 'won') templateBreakdown[key].won++;
+    }
+  });
+
+  // Outcome reasons breakdown
+  const outcomeReasonBreakdown: Record<string, number> = {};
+  leads.forEach(l => {
+    if (['lost', 'not_suitable', 'no_response'].includes(l.status) && l.outcome_reason) {
+      const key = `${l.status.replace('_', ' ')}: ${l.outcome_reason}`;
+      outcomeReasonBreakdown[key] = (outcomeReasonBreakdown[key] || 0) + 1;
+    }
   });
 
   return (
@@ -936,9 +1370,9 @@ export default function Home() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
               CRM Lead Manager
-              {leads.filter(l => l.status !== 'lost').length > 0 && (
+              {leads.filter(l => !['lost', 'not_suitable', 'no_response'].includes(l.status)).length > 0 && (
                 <span className="ml-auto bg-indigo-500 text-white font-semibold text-xs px-2 py-0.5 rounded-full" title="Total active leads">
-                  {leads.filter(l => l.status !== 'lost').length}
+                  {leads.filter(l => !['lost', 'not_suitable', 'no_response'].includes(l.status)).length}
                 </span>
               )}
             </button>
@@ -957,6 +1391,37 @@ export default function Home() {
               {leads.filter(l => l.status === 'printed').length > 0 && (
                 <span className="ml-auto bg-[#35b0f3] text-white font-semibold text-xs px-2 py-0.5 rounded-full">
                   {leads.filter(l => l.status === 'printed').length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setSelectedTab('performance')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                selectedTab === 'performance'
+                  ? 'bg-slate-800/80 text-white border-l-4 border-indigo-500 shadow-inner'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+              }`}
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              Performance Analytics
+            </button>
+            <button
+              onClick={() => setSelectedTab('milestones')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                selectedTab === 'milestones'
+                  ? 'bg-slate-800/80 text-white border-l-4 border-indigo-500 shadow-inner'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+              }`}
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5a2 2 0 10-2 2h2zm0 0H4m8 0h8m-8 0a2 2 0 102 2h-2zm0 0a2 2 0 11-2 2h2z" />
+              </svg>
+              Motivation Milestones
+              {milestones.filter(m => m.completed_date && !m.archived).length > 0 && (
+                <span className="ml-auto bg-emerald-500 text-white font-semibold text-xs px-2 py-0.5 rounded-full" title="Completed active milestones">
+                  {milestones.filter(m => m.completed_date && !m.archived).length}
                 </span>
               )}
             </button>
@@ -1214,16 +1679,25 @@ export default function Home() {
                             <svg className="h-4 w-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
-                            Tracked ({company.lead_status})
+                            Tracked ({company.lead_status?.replace('_', ' ') || ''})
                           </div>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleTrackLead(company)}
-                            className="bg-indigo-600/10 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/20 hover:border-indigo-600 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all shadow-sm active:scale-95"
-                          >
-                            Track Lead
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleMarkUnsuitable(company)}
+                              className="bg-red-950/20 hover:bg-red-900 hover:text-white text-red-400 border border-red-900/30 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shadow-sm active:scale-95 cursor-pointer"
+                            >
+                              Unsuitable
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleTrackLead(company)}
+                              className="bg-indigo-600/10 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/20 hover:border-indigo-600 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all shadow-sm active:scale-95 cursor-pointer"
+                            >
+                              Track Lead
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1233,11 +1707,10 @@ export default function Home() {
             </div>
           </div>
         )}
-
         {selectedTab === 'crm' && (
           <div>
             {/* CRM Lead Manager View */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-6">
               <div>
                 <h2 className="text-2xl font-bold tracking-tight">CRM Lead Manager</h2>
                 <p className="text-sm text-slate-400">Track status, record client notes, and set call back dates.</p>
@@ -1245,11 +1718,14 @@ export default function Home() {
 
               {/* Status Filters */}
               <div className="bg-slate-900 border border-slate-800 p-1 rounded-xl flex flex-wrap gap-1 text-xs font-medium self-start lg:self-center">
-                {(['all', 'new', 'printed', 'delivered', 'interested', 'meeting', 'quote', 'won', 'lost'] as const).map(status => (
+                {(['all', 'new', 'printed', 'delivered', 'responded', 'first_call', 'meeting_booked', 'meeting_completed', 'proposal_sent', 'follow_up_sent', 'won', 'lost', 'not_suitable', 'no_response'] as const).map(status => (
                   <button
                     key={status}
-                    onClick={() => setCrmStatusFilter(status)}
-                    className={`px-3.5 py-1.5 rounded-lg capitalize transition-colors flex items-center gap-1.5 ${
+                    onClick={() => {
+                      setCrmStatusFilter(status);
+                      setCrmCurrentPage(1);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg capitalize transition-colors flex items-center gap-1.5 ${
                       crmStatusFilter === status
                         ? 'bg-slate-800 text-white'
                         : 'text-slate-400 hover:text-slate-200'
@@ -1258,15 +1734,20 @@ export default function Home() {
                     <span className={`h-2 w-2 rounded-full ${
                       status === 'all' ? 'bg-indigo-400' :
                       status === 'new' ? 'bg-sky-400' :
-                      status === 'printed' ? 'bg-indigo-500' :
-                      status === 'delivered' ? 'bg-emerald-500' :
-                      status === 'interested' ? 'bg-pink-400' :
-                      status === 'meeting' ? 'bg-purple-400' :
-                      status === 'quote' ? 'bg-amber-400' :
-                      status === 'won' ? 'bg-teal-400' :
-                      'bg-rose-500'
+                      status === 'printed' ? 'bg-blue-500' :
+                      status === 'delivered' ? 'bg-cyan-500' :
+                      status === 'responded' ? 'bg-pink-400' :
+                      status === 'first_call' ? 'bg-purple-400' :
+                      status === 'meeting_booked' ? 'bg-purple-650' :
+                      status === 'meeting_completed' ? 'bg-indigo-600' :
+                      status === 'proposal_sent' ? 'bg-amber-400' :
+                      status === 'follow_up_sent' ? 'bg-orange-400' :
+                      status === 'won' ? 'bg-emerald-400' :
+                      status === 'lost' ? 'bg-rose-500' :
+                      status === 'not_suitable' ? 'bg-red-500' :
+                      'bg-slate-500'
                     }`} />
-                    {status}
+                    {status.replace('_', ' ')}
                     {status !== 'all' && leads.filter(l => l.status === status).length > 0 && (
                       <span className="text-[10px] bg-slate-950 px-1.5 py-0.5 rounded text-slate-400">
                         {leads.filter(l => l.status === status).length}
@@ -1277,8 +1758,67 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Sort, Page Size and Filter Toolbar */}
+            <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 text-sm">
+              <div className="flex flex-wrap items-center gap-4">
+                {crmStatusFilter === 'all' && (
+                  <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={crmHideNegativeOutcomes}
+                      onChange={e => {
+                        setCrmHideNegativeOutcomes(e.target.checked);
+                        setCrmCurrentPage(1);
+                      }}
+                      className="h-4.5 w-4.5 rounded border-slate-800 text-indigo-600 bg-slate-950 accent-indigo-500 cursor-pointer"
+                    />
+                    <span>Hide Lost / Not Suitable / No Response</span>
+                  </label>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Sort selector */}
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 font-medium text-xs uppercase tracking-wider">Sort by:</span>
+                  <select
+                    value={crmSortOrder}
+                    onChange={e => {
+                      setCrmSortOrder(e.target.value as any);
+                      setCrmCurrentPage(1);
+                    }}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+                  >
+                    <option value="incorporation_desc" className="bg-slate-900 text-slate-100">Incorporation Date (Newest)</option>
+                    <option value="incorporation_asc" className="bg-slate-900 text-slate-100">Incorporation Date (Oldest)</option>
+                    <option value="name_asc" className="bg-slate-900 text-slate-100">Company Name (A-Z)</option>
+                    <option value="next_contact_asc" className="bg-slate-900 text-slate-100">Callback Date (Earliest)</option>
+                    <option value="created_desc" className="bg-slate-900 text-slate-100">Date Added (Newest)</option>
+                  </select>
+                </div>
+
+                {/* Page Size selector */}
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 font-medium text-xs uppercase tracking-wider">Page Size:</span>
+                  <select
+                    value={crmPageSize}
+                    onChange={e => {
+                      setCrmPageSize(Number(e.target.value));
+                      setCrmCurrentPage(1);
+                    }}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+                  >
+                    <option value="10" className="bg-slate-900 text-slate-100">10</option>
+                    <option value="25" className="bg-slate-900 text-slate-100">25</option>
+                    <option value="50" className="bg-slate-900 text-slate-100">50</option>
+                    <option value="100" className="bg-slate-900 text-slate-100">100</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
             {/* CRM Leads List */}
-            {filteredLeads.length === 0 ? (
+            {sortedLeads.length === 0 ? (
               <div className="bg-slate-900/20 border border-dashed border-slate-800 rounded-2xl p-12 text-center max-w-xl mx-auto mt-12">
                 <svg className="mx-auto h-12 w-12 text-slate-600 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -1286,7 +1826,7 @@ export default function Home() {
                 <h3 className="text-lg font-bold text-slate-300">No leads found</h3>
                 <p className="text-slate-500 text-sm mt-2">
                   {crmStatusFilter !== 'all' 
-                    ? `You don't have any leads marked as "${crmStatusFilter}".` 
+                    ? `You don't have any leads marked as "${crmStatusFilter.replace('_', ' ')}".` 
                     : "You aren't tracking any leads yet. Query Companies House in 'Find Leads' to add some."}
                 </p>
               </div>
@@ -1297,19 +1837,19 @@ export default function Home() {
                   <label className="flex items-center gap-2.5 cursor-pointer select-none">
                     <input
                       type="checkbox"
-                      checked={filteredLeads.length > 0 && filteredLeads.every(l => selectedLabelIds.includes(l.id))}
+                      checked={sortedLeads.length > 0 && sortedLeads.every(l => selectedLabelIds.includes(l.id))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          const toAdd = filteredLeads.map(l => l.id);
+                          const toAdd = sortedLeads.map(l => l.id);
                           setSelectedLabelIds(prev => Array.from(new Set([...prev, ...toAdd])));
                         } else {
-                          const toRemove = filteredLeads.map(l => l.id);
+                          const toRemove = sortedLeads.map(l => l.id);
                           setSelectedLabelIds(prev => prev.filter(id => !toRemove.includes(id)));
                         }
                       }}
                       className="h-4.5 w-4.5 rounded border-slate-800 text-indigo-600 bg-slate-950 accent-indigo-500 cursor-pointer"
                     />
-                    <span>Select All {filteredLeads.length} Leads in Filter for Address Labels</span>
+                    <span>Select All {sortedLeads.length} Leads in Filter for Address Labels</span>
                   </label>
                   {selectedLabelIds.length > 0 && (
                     <button
@@ -1321,7 +1861,7 @@ export default function Home() {
                   )}
                 </div>
 
-                {filteredLeads.map(lead => (
+                {paginatedLeads.map(lead => (
                   <div
                     key={lead.id}
                     className="bg-slate-900/40 border border-slate-850 hover:border-slate-800/80 rounded-2xl p-6 transition-all duration-150"
@@ -1343,7 +1883,14 @@ export default function Home() {
                           title="Select for address labels"
                         />
                         <div>
-                          <h3 className="text-lg font-bold text-white tracking-tight leading-snug">{lead.name}</h3>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-lg font-bold text-white tracking-tight leading-snug">{lead.name}</h3>
+                            {!['new', 'printed', 'delivered'].includes(lead.status) && (!lead.phone || !lead.email || !lead.contact_name) && (
+                              <span className="px-2 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 animate-pulse">
+                                ⚠️ Profile Incomplete
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-slate-500 mt-1">
                             No. {lead.company_number} &bull; Incorporated: {formatDate(lead.incorporation_date)}
                           </p>
@@ -1354,24 +1901,29 @@ export default function Home() {
                       <div className="flex flex-wrap items-center gap-2">
                         {/* Status buttons */}
                         <div className="bg-slate-950 p-1 border border-slate-850 rounded-xl flex flex-wrap gap-1 text-[11px] font-semibold">
-                          {(['new', 'printed', 'delivered', 'interested', 'meeting', 'quote', 'won', 'lost'] as const).map(st => (
+                          {(['new', 'printed', 'delivered', 'responded', 'first_call', 'meeting_booked', 'meeting_completed', 'proposal_sent', 'follow_up_sent', 'won', 'lost', 'not_suitable', 'no_response'] as const).map(st => (
                             <button
                               key={st}
                               onClick={() => handleUpdateStatus(lead.id, lead.name, st)}
                               className={`px-3 py-1.5 rounded-lg capitalize transition-colors ${
                                 lead.status === st
                                   ? st === 'new' ? 'bg-sky-500/25 text-sky-300 border border-sky-500/20' :
-                                    st === 'printed' ? 'bg-indigo-500/25 text-indigo-300 border border-indigo-500/20' :
-                                    st === 'delivered' ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/20' :
-                                    st === 'interested' ? 'bg-pink-500/25 text-pink-300 border border-pink-500/20' :
-                                    st === 'meeting' ? 'bg-purple-500/25 text-purple-300 border border-purple-500/20' :
-                                    st === 'quote' ? 'bg-amber-500/25 text-amber-300 border border-amber-500/20' :
-                                    st === 'won' ? 'bg-teal-500/25 text-teal-300 border border-teal-500/20' :
-                                    'bg-rose-500/25 text-rose-300 border border-rose-500/20'
+                                    st === 'printed' ? 'bg-blue-500/25 text-blue-300 border border-blue-500/20' :
+                                    st === 'delivered' ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/20' :
+                                    st === 'responded' ? 'bg-pink-500/25 text-pink-300 border border-pink-500/20' :
+                                    st === 'first_call' ? 'bg-purple-500/25 text-purple-300 border border-purple-500/20' :
+                                    st === 'meeting_booked' ? 'bg-purple-600/25 text-purple-300 border border-purple-650/20' :
+                                    st === 'meeting_completed' ? 'bg-indigo-600/25 text-indigo-300 border border-indigo-600/20' :
+                                    st === 'proposal_sent' ? 'bg-amber-500/25 text-amber-300 border border-amber-500/20' :
+                                    st === 'follow_up_sent' ? 'bg-orange-500/25 text-orange-300 border border-orange-500/20' :
+                                    st === 'won' ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/20' :
+                                    st === 'lost' ? 'bg-rose-500/25 text-rose-300 border border-rose-500/20' :
+                                    st === 'not_suitable' ? 'bg-red-500/25 text-red-300 border border-red-500/20' :
+                                    'bg-slate-500/25 text-slate-300 border border-slate-500/20'
                                   : 'text-slate-500 hover:text-slate-300 border border-transparent'
                               }`}
                             >
-                              {st}
+                              {st.replace('_', ' ')}
                             </button>
                           ))}
                         </div>
@@ -1436,12 +1988,17 @@ export default function Home() {
                             <div className="mt-3 space-y-1.5 border-t border-slate-850/30 pt-3">
                               <p className="text-[11.5px] text-slate-400 leading-normal">
                                 <span className="text-slate-500 font-medium block uppercase tracking-wider text-[9px] mb-1">Initial Service Offer</span>
-                                <span className="text-indigo-300 font-semibold">Website (£300)</span>
+                                <span className="text-indigo-300 font-semibold">Website (£{lead.offer_price || 300})</span>
                               </p>
                               {lead.delivery_date && lead.status === 'delivered' && (
                                 <p className="text-emerald-400 text-xs font-bold flex items-center gap-1.5">
                                   <span className="text-[14px]">📅</span> Delivered: {formatDate(lead.delivery_date)}
                                 </p>
+                              )}
+                              {lead.outcome_reason && (
+                                <div className="text-rose-400 text-xs font-semibold bg-rose-955/20 border border-rose-900/30 p-2 rounded-lg mt-2">
+                                  Outcome: {lead.outcome_reason} {lead.outcome_reason_other ? `(${lead.outcome_reason_other})` : ''}
+                                </div>
                               )}
                               <p className="text-[11.5px] text-slate-400 leading-normal">
                                 <span className="text-slate-500 font-medium block uppercase tracking-wider text-[9px] mb-1">Future Offerings (upsell)</span>
@@ -1463,54 +2020,150 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* Middle: Callback / Next Contact Date */}
-                      <div className="text-sm">
-                        <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider block mb-2">Next Action / Callback</span>
-                        {editingDateId === lead.id ? (
-                          <div className="flex gap-2">
-                            <input
-                              type="date"
-                              value={editingDateValue}
-                              onChange={e => setEditingDateValue(e.target.value)}
-                              className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                            />
-                            <button
-                              onClick={() => handleSaveCallbackDate(lead.id, lead.name, editingDateValue)}
-                              className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors"
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={() => setEditingDateId(null)}
-                              className="text-slate-400 hover:text-slate-200 text-xs px-2"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            {lead.next_contact_date ? (
-                              <div className="bg-amber-950/20 text-amber-300 border border-amber-900/40 px-3 py-2 rounded-xl flex items-center gap-2 text-xs">
-                                <svg className="h-4 w-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <span>Follow up: <strong>{formatDate(lead.next_contact_date)}</strong></span>
+                      {/* Middle: Callback & Contact Info Editor */}
+                      <div className="text-sm space-y-4">
+                        <div>
+                          <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider block mb-2">Next Action / Callback</span>
+                          {editingDateId === lead.id ? (
+                            <div className="flex gap-2">
+                              <input
+                                type="date"
+                                value={editingDateValue}
+                                onChange={e => setEditingDateValue(e.target.value)}
+                                className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                              />
+                              <button
+                                onClick={() => handleSaveCallbackDate(lead.id, lead.name, editingDateValue)}
+                                className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingDateId(null)}
+                                className="text-slate-400 hover:text-slate-200 text-xs px-2"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              {lead.next_contact_date ? (
+                                <div className="bg-amber-950/20 text-amber-300 border border-amber-900/40 px-3 py-2 rounded-xl flex items-center gap-2 text-xs">
+                                  <svg className="h-4 w-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  <span>Follow up: <strong>{formatDate(lead.next_contact_date)}</strong></span>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-slate-500 italic">No call back scheduled</span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingDateId(lead.id);
+                                  setEditingDateValue(lead.next_contact_date || "");
+                                }}
+                                className="text-indigo-400 hover:text-indigo-300 text-xs font-semibold ml-1.5"
+                              >
+                                {lead.next_contact_date ? "Edit" : "Set date"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Phone & Email contact details editor */}
+                        <div className="pt-3 border-t border-slate-850/40 space-y-2">
+                          <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider block">Contact Information</span>
+                          {editingContactId === lead.id ? (
+                            <div className="space-y-2">
+                              <div>
+                                <label className="text-[10px] text-slate-400 block mb-0.5 font-medium">Contact Person Name</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Jane Doe"
+                                  value={editingContactName}
+                                  onChange={e => setEditingContactName(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-750 focus:outline-none focus:border-indigo-500"
+                                />
                               </div>
-                            ) : (
-                              <span className="text-xs text-slate-500 italic">No call back scheduled</span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingDateId(lead.id);
-                                setEditingDateValue(lead.next_contact_date || "");
-                              }}
-                              className="text-indigo-400 hover:text-indigo-300 text-xs font-semibold ml-1.5"
-                            >
-                              {lead.next_contact_date ? "Edit" : "Set date"}
-                            </button>
-                          </div>
-                        )}
+                              <div>
+                                <label className="text-[10px] text-slate-400 block mb-0.5 font-medium">Phone Number</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. 07123 456789"
+                                  value={editingPhone}
+                                  onChange={e => setEditingPhone(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-750 focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-slate-400 block mb-0.5 font-medium">Email Address</label>
+                                <input
+                                  type="email"
+                                  placeholder="e.g. name@company.com"
+                                  value={editingEmail}
+                                  onChange={e => setEditingEmail(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-750 focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+                              <div className="flex gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveContactInfo(lead.id)}
+                                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingContactId(null)}
+                                  className="text-slate-400 hover:text-slate-200 text-xs px-2.5 py-1"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-1 text-xs">
+                              <p className="text-slate-400 flex items-center gap-1.5">
+                                <span className="text-slate-500 font-medium">Name:</span>
+                                {lead.contact_name ? (
+                                  <strong className="text-slate-300 font-semibold">{lead.contact_name}</strong>
+                                ) : (
+                                  <span className="text-slate-600 italic">Not set</span>
+                                )}
+                              </p>
+                              <p className="text-slate-400 flex items-center gap-1.5">
+                                <span className="text-slate-500 font-medium">Phone:</span>
+                                {lead.phone ? (
+                                  <strong className="text-slate-300 font-semibold">{lead.phone}</strong>
+                                ) : (
+                                  <span className="text-slate-600 italic">Not set</span>
+                                )}
+                              </p>
+                              <p className="text-slate-400 flex items-center gap-1.5">
+                                <span className="text-slate-500 font-medium">Email:</span>
+                                {lead.email ? (
+                                  <a href={`mailto:${lead.email}`} className="text-indigo-400 hover:underline break-all">{lead.email}</a>
+                                ) : (
+                                  <span className="text-slate-600 italic">Not set</span>
+                                )}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingContactId(lead.id);
+                                  setEditingPhone(lead.phone || "");
+                                  setEditingEmail(lead.email || "");
+                                  setEditingContactName(lead.contact_name || "");
+                                }}
+                                className="text-indigo-400 hover:text-indigo-300 text-xs font-semibold mt-1 block"
+                              >
+                                Edit Contact Details
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Right: Notes */}
@@ -1582,6 +2235,38 @@ export default function Home() {
               </div>
             )}
 
+            {/* Pagination Controls */}
+            {sortedLeads.length > crmPageSize && (
+              <div className="flex items-center justify-between bg-slate-900/20 border border-slate-850/60 rounded-xl px-6 py-4 mt-6 text-sm">
+                <div className="text-slate-400">
+                  Showing <span className="font-semibold text-white">{startIndex + 1}</span> to{' '}
+                  <span className="font-semibold text-white">
+                    {Math.min(startIndex + crmPageSize, sortedLeads.length)}
+                  </span>{' '}
+                  of <span className="font-semibold text-white">{sortedLeads.length}</span> leads
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={currentPageSafe === 1}
+                    onClick={() => setCrmCurrentPage(prev => Math.max(prev - 1, 1))}
+                    className="px-3.5 py-1.5 rounded-xl border border-slate-800 text-xs font-semibold hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent transition-colors cursor-pointer"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs text-slate-400 font-medium">
+                    Page {currentPageSafe} of {totalPages}
+                  </span>
+                  <button
+                    disabled={currentPageSafe === totalPages}
+                    onClick={() => setCrmCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                    className="px-3.5 py-1.5 rounded-xl border border-slate-800 text-xs font-semibold hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent transition-colors cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Sticky bottom selection bar */}
             {selectedLabelIds.length > 0 && (
               <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-40 bg-slate-900/90 border border-slate-800 backdrop-blur-md px-6 py-4 rounded-2xl flex items-center justify-between gap-6 shadow-2xl w-full max-w-xl no-print">
@@ -1613,6 +2298,440 @@ export default function Home() {
 
         {selectedTab === 'map' && (
           <MapComponent leads={leads} onUpdateStatus={handleUpdateStatus} onPrintMap={handlePrintMap} />
+        )}
+
+        {selectedTab === 'performance' && (
+          <div className="space-y-6">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-2">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
+                  <span>📊</span> Performance Analytics
+                </h2>
+                <p className="text-sm text-slate-400">Analyze rates, timelines, template conversions, and deal values.</p>
+              </div>
+            </div>
+
+            {/* Performance Analytics Filters */}
+            <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+              <div>
+                <label className="text-slate-500 font-semibold block mb-1 uppercase tracking-wider">Start Date</label>
+                <input
+                  type="date"
+                  value={perfFilterDateStart}
+                  onChange={e => setPerfFilterDateStart(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="text-slate-500 font-semibold block mb-1 uppercase tracking-wider">End Date</label>
+                <input
+                  type="date"
+                  value={perfFilterDateEnd}
+                  onChange={e => setPerfFilterDateEnd(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="text-slate-500 font-semibold block mb-1 uppercase tracking-wider">Industry Category</label>
+                <select
+                  value={perfFilterCategory}
+                  onChange={e => setPerfFilterCategory(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="all" className="bg-slate-900 text-slate-100">All Categories</option>
+                  {Array.from(new Set(leads.map(l => l.industry_category).filter(Boolean))).map(cat => (
+                    <option key={cat} value={cat || ""} className="bg-slate-900 text-slate-100">{cat}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-slate-500 font-semibold block mb-1 uppercase tracking-wider">Letter Template Version</label>
+                <select
+                  value={perfFilterTemplate}
+                  onChange={e => setPerfFilterTemplate(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="all" className="bg-slate-900 text-slate-100">All Templates</option>
+                  {Array.from(new Set(leads.map(l => l.base_version).filter(Boolean))).map(tmpl => (
+                    <option key={tmpl} value={tmpl || ""} className="bg-slate-900 text-slate-100">{tmpl}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="text-slate-500 font-semibold block mb-1 uppercase tracking-wider">Offer Price Range (£)</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    placeholder="Min"
+                    value={perfFilterPriceMin === 0 ? "" : perfFilterPriceMin}
+                    onChange={e => setPerfFilterPriceMin(Number(e.target.value))}
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  />
+                  <span className="text-slate-500 font-bold">to</span>
+                  <input
+                    type="number"
+                    placeholder="Max"
+                    value={perfFilterPriceMax === 1000 ? "" : perfFilterPriceMax}
+                    onChange={e => setPerfFilterPriceMax(e.target.value === "" ? 1000 : Number(e.target.value))}
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Performance Stats Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Total Revenue */}
+              <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-6 relative overflow-hidden">
+                <div className="absolute right-0 bottom-0 text-slate-850 text-7xl font-bold opacity-10 pointer-events-none select-none">£</div>
+                <span className="text-slate-500 font-bold text-xs uppercase tracking-wider block mb-2">Total Revenue Won</span>
+                <span className="text-2xl font-black text-white">£{perfTotalRevenue.toLocaleString()}</span>
+                <span className="text-[10px] text-slate-400 block mt-1">Based on manual won deal values</span>
+              </div>
+
+              {/* MRR won */}
+              <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-6 relative overflow-hidden">
+                <div className="absolute right-0 bottom-0 text-slate-850 text-7xl font-bold opacity-10 pointer-events-none select-none">M</div>
+                <span className="text-slate-500 font-bold text-xs uppercase tracking-wider block mb-2">Monthly Subscription MRR</span>
+                <span className="text-2xl font-black text-indigo-400">£{perfMrr.toLocaleString()}/mo</span>
+                <span className="text-[10px] text-slate-400 block mt-1">Won client subscription revenue (£25/mo)</span>
+              </div>
+
+              {/* Avg Response Time */}
+              <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-6 relative overflow-hidden">
+                <span className="text-slate-500 font-bold text-xs uppercase tracking-wider block mb-2">Avg Days to Respond</span>
+                <span className="text-2xl font-black text-white">
+                  {avgDaysToRespond !== null ? `${avgDaysToRespond} days` : 'N/A'}
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-1">From letter delivery to initial enquiry</span>
+              </div>
+
+              {/* Avg Win Time */}
+              <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-6 relative overflow-hidden">
+                <span className="text-slate-500 font-bold text-xs uppercase tracking-wider block mb-2">Avg Days to Win</span>
+                <span className="text-2xl font-black text-emerald-400">
+                  {avgDaysToWin !== null ? `${avgDaysToWin} days` : 'N/A'}
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-1">From letter delivery to won contract</span>
+              </div>
+            </div>
+
+            {/* Funnel Progress stack chart */}
+            <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-6">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-6">Pipeline Conversion Funnel</h3>
+              <div className="space-y-4">
+                {/* 1. Delivered */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span className="text-slate-400">1. Delivered Letters</span>
+                    <span className="text-white">{perfDeliveredCount}</span>
+                  </div>
+                  <div className="w-full bg-slate-950 h-5 rounded-lg overflow-hidden border border-slate-850 flex">
+                    <div className="bg-blue-500 h-full flex items-center justify-center text-[10px] font-bold text-white transition-all duration-300" style={{ width: '100%' }}>
+                      100%
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Responded */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span className="text-slate-400">2. Responses / Enquiries</span>
+                    <span className="text-white">{perfResponseCount} <span className="text-slate-500">({responseRate}% Response Rate)</span></span>
+                  </div>
+                  <div className="w-full bg-slate-950 h-5 rounded-lg overflow-hidden border border-slate-850">
+                    <div className="bg-pink-500 h-full flex items-center justify-center text-[10px] font-bold text-white transition-all duration-300" style={{ width: `${responseRate}%` }}>
+                      {responseRate}%
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Meeting */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span className="text-slate-400">3. Meetings Booked</span>
+                    <span className="text-white">{perfMeetingCount} <span className="text-slate-500">({meetingRate}% Response-to-Meeting)</span></span>
+                  </div>
+                  <div className="w-full bg-slate-950 h-5 rounded-lg overflow-hidden border border-slate-850">
+                    <div className="bg-purple-500 h-full flex items-center justify-center text-[10px] font-bold text-white transition-all duration-300" style={{ width: `${responseRate * (meetingRate / 100)}%` }}>
+                      {meetingRate}%
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Proposal */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span className="text-slate-400">4. Proposals Sent</span>
+                    <span className="text-white">{perfProposalCount} <span className="text-slate-500">({proposalRate}% Meeting-to-Proposal)</span></span>
+                  </div>
+                  <div className="w-full bg-slate-950 h-5 rounded-lg overflow-hidden border border-slate-850">
+                    <div className="bg-amber-500 h-full flex items-center justify-center text-[10px] font-bold text-white transition-all duration-300" style={{ width: `${responseRate * (meetingRate / 100) * (proposalRate / 100)}%` }}>
+                      {proposalRate}%
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5. Won */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span className="text-slate-400">5. Client Deals Won</span>
+                    <span className="text-white">{perfWonCount} <span className="text-slate-500">({winRate}% Win Rate)</span></span>
+                  </div>
+                  <div className="w-full bg-slate-950 h-5 rounded-lg overflow-hidden border border-slate-850">
+                    <div className="bg-emerald-500 h-full flex items-center justify-center text-[10px] font-bold text-white transition-all duration-300" style={{ width: `${winRate}%` }}>
+                      {winRate}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Performance breakdowns tables grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Template variation conversion */}
+              <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-6">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Template Variation Conversions</h3>
+                <div className="overflow-x-auto text-xs">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-500">
+                        <th className="pb-3 font-semibold">Template Key</th>
+                        <th className="pb-3 font-semibold text-center">Delivered</th>
+                        <th className="pb-3 font-semibold text-center">Responded</th>
+                        <th className="pb-3 font-semibold text-center">Won</th>
+                        <th className="pb-3 font-semibold text-right">Win Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.keys(templateBreakdown).length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-4 text-center text-slate-600 italic">No template tracking data available yet.</td>
+                        </tr>
+                      ) : (
+                        Object.entries(templateBreakdown).map(([key, data]) => (
+                          <tr key={key} className="border-b border-slate-850/50 hover:bg-slate-900/20">
+                            <td className="py-3 font-mono font-semibold text-indigo-400">{key}</td>
+                            <td className="py-3 text-center text-slate-300">{data.total}</td>
+                            <td className="py-3 text-center text-slate-300">{data.responded}</td>
+                            <td className="py-3 text-center text-slate-300">{data.won}</td>
+                            <td className="py-3 text-right text-emerald-400 font-bold">
+                              {data.total > 0 ? Math.round((data.won / data.total) * 100) : 0}%
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Dead leads reasons */}
+              <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-6">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Dead Leads Breakdown by Reason</h3>
+                <div className="overflow-x-auto text-xs">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-500">
+                        <th className="pb-3 font-semibold">Stage & Reason</th>
+                        <th className="pb-3 font-semibold text-right">Lead Count</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.keys(outcomeReasonBreakdown).length === 0 ? (
+                        <tr>
+                          <td colSpan={2} className="py-4 text-center text-slate-650 italic">No logged negative outcome reasons.</td>
+                        </tr>
+                      ) : (
+                        Object.entries(outcomeReasonBreakdown).map(([reason, count]) => (
+                          <tr key={reason} className="border-b border-slate-850/50 hover:bg-slate-900/20">
+                            <td className="py-3 text-slate-300 font-medium capitalize">{reason}</td>
+                            <td className="py-3 text-right text-rose-400 font-bold">{count}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {selectedTab === 'milestones' && (
+          <div className="space-y-6">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-2">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
+                  <span>🏆</span> Motivation Milestones
+                </h2>
+                <p className="text-sm text-slate-400">Set targets, track metrics, and reward progression through the sales funnel.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOpenMilestoneModal(null)}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-md shadow-indigo-600/10 active:scale-95 flex items-center gap-2 self-start lg:self-center cursor-pointer"
+              >
+                <span>+</span> Add Custom Milestone
+              </button>
+            </div>
+
+            {/* Filters toggle */}
+            <div className="bg-slate-900 border border-slate-800 p-1 rounded-xl flex gap-1 text-xs font-semibold w-fit">
+              {(['incomplete', 'completed', 'all'] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setMilestoneFilter(f)}
+                  className={`px-4 py-2 rounded-lg capitalize transition-colors ${
+                    milestoneFilter === f
+                      ? 'bg-slate-800 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {f === 'completed' ? 'Completed (Active)' : f}
+                </button>
+              ))}
+            </div>
+
+            {loadingMilestones ? (
+              <div className="flex items-center justify-center p-20 text-slate-500">
+                <span className="animate-pulse">Loading milestones...</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {milestones
+                  .filter(m => {
+                    if (milestoneFilter === 'incomplete') return !m.completed_date && !m.archived;
+                    if (milestoneFilter === 'completed') return m.completed_date && !m.archived;
+                    return true;
+                  })
+                  .map(m => {
+                    const percent = m.completed_date ? 100 : Math.min(Math.round(((m.current_value || 0) / m.target_value) * 100), 99);
+                    
+                    return (
+                      <div
+                        key={m.id}
+                        className={`bg-slate-900/40 border rounded-2xl p-6 flex flex-col justify-between transition-all duration-155 ${
+                          m.completed_date 
+                            ? m.archived 
+                              ? 'border-slate-800 opacity-60' 
+                              : 'border-emerald-500/30 bg-emerald-955/5 shadow-lg shadow-emerald-950/5'
+                            : 'border-slate-850 hover:border-slate-800'
+                        }`}
+                      >
+                        <div>
+                          {/* Header: Type and Action buttons */}
+                          <div className="flex justify-between items-start mb-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider font-mono ${
+                              m.type === 'activity' ? 'bg-sky-950/60 border border-sky-900/50 text-sky-400' :
+                              m.type === 'conversion' ? 'bg-pink-955/60 border border-pink-900/50 text-pink-400' :
+                              m.type === 'revenue' ? 'bg-emerald-950/60 border border-emerald-900/50 text-emerald-400' :
+                              'bg-purple-950/60 border border-purple-900/50 text-purple-400'
+                            }`}>
+                              {m.type}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {/* Edit Milestone */}
+                              <button
+                                onClick={() => handleOpenMilestoneModal(m)}
+                                className="text-slate-500 hover:text-indigo-400 p-1.5 bg-slate-950/30 hover:bg-slate-950/80 rounded-lg transition-all"
+                                title="Edit milestone configuration"
+                              >
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                              </button>
+
+                              {/* Archive/Unarchive action button */}
+                              <button
+                                onClick={() => handleArchiveMilestone(m.id, !m.archived)}
+                                className="text-slate-505 hover:text-slate-300 p-1.5 bg-slate-950/30 hover:bg-slate-950/80 rounded-lg transition-all"
+                                title={m.archived ? "Unarchive milestone" : "Archive milestone"}
+                              >
+                                {m.archived ? (
+                                  <svg className="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l3-3m-3 3L9 8m-5 5h2.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293h3.172a1 1 0 00.707-.293l2.414-2.414a1 1 0 01.707-.293H20" />
+                                  </svg>
+                                ) : (
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+
+                          <h3 className="text-base font-bold text-white mb-1 leading-snug">{m.title}</h3>
+                          <p className="text-xs text-slate-500 font-mono mb-4">
+                            Metric: {m.metric.replace(/_/g, ' ')} &bull; Target: {m.target_value}
+                          </p>
+
+                          {/* Reward area */}
+                          {m.reward && (
+                            <div className="flex items-center gap-1.5 mb-4 text-xs font-semibold bg-indigo-950/20 border border-indigo-900/30 text-indigo-300 px-3 py-1.5 rounded-xl w-fit">
+                              <span>🎁 Reward:</span>
+                              <strong>{m.reward}</strong>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-3 pt-2">
+                          {/* Progress/Completion indicators */}
+                          {m.completed_date ? (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-xs text-emerald-400 font-semibold bg-emerald-950/25 border border-emerald-900/30 p-2.5 rounded-xl">
+                                <span className="flex items-center gap-1.5">
+                                  <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  Completed!
+                                </span>
+                                <span>{formatDate(m.completed_date)}</span>
+                              </div>
+
+                              {/* Celebration success note display */}
+                              {m.celebration_notes ? (
+                                <p className="text-xs text-slate-400 italic bg-slate-950/40 p-2.5 rounded-xl border border-slate-850">
+                                  &ldquo;{m.celebration_notes}&rdquo;
+                                </p>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenMilestoneModal(m)}
+                                  className="text-indigo-400 hover:text-indigo-300 text-xs font-semibold"
+                                >
+                                  + Record celebration memory
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between text-xs font-semibold text-slate-400">
+                                <span>Progress</span>
+                                <span>{m.current_value || 0} / {m.target_value} ({percent}%)</span>
+                              </div>
+                              <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-850">
+                                <div
+                                  className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full rounded-full transition-all duration-300"
+                                  style={{ width: `${percent}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {m.archived && (
+                            <div className="text-[10px] uppercase font-bold tracking-widest text-amber-500 mt-2">
+                              📁 Archived (Hidden in main dashboard)
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
         )}
       </main>
 
@@ -2038,59 +3157,330 @@ export default function Home() {
         </div>
       )}
 
-      {/* Modal overlay for Logging Delivery Date */}
-      {deliveryDatePromptLead && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 no-print">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-fade-in">
-            {/* Modal Header */}
+      {/* Unified Status Logger Modal */}
+      {statusModalLead && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 no-print animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
             <div className="px-6 py-4 border-b border-slate-850 flex items-center justify-between bg-slate-900/60">
               <div>
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <span>📅</span> Log Delivery Date
+                <h3 className="text-lg font-bold text-white capitalize flex items-center gap-2">
+                  <span>📅</span> Log Status: {statusModalLead.targetStatus.replace('_', ' ')}
                 </h3>
                 <p className="text-xs text-slate-400 mt-1">
-                  Marking <span className="text-indigo-400 font-semibold">{deliveryDatePromptLead.name}</span> as delivered.
+                  Log details for updating <span className="text-indigo-400 font-semibold">{statusModalLead.name}</span>.
                 </p>
               </div>
             </div>
-            {/* Modal Content */}
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="text-xs text-slate-400 font-semibold block mb-2">
-                  Delivery Date (Compulsory)
+
+            <div className="p-6 space-y-4 text-sm">
+              {/* Date Input */}
+              <div className="space-y-2">
+                <label className="text-xs text-slate-400 font-semibold block">
+                  Event Date
                 </label>
                 <input
                   type="date"
-                  value={selectedDeliveryDate}
-                  onChange={(e) => setSelectedDeliveryDate(e.target.value)}
-                  required
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-sans"
+                  value={selectedStatusDate}
+                  onChange={e => setSelectedStatusDate(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-indigo-500 font-sans"
                 />
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStatusDate(new Date().toISOString().split("T")[0])}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold px-2 py-1 rounded transition-colors"
+                  >
+                    Today
+                  </button>
+                  {(() => {
+                    const lead = leads.find(l => l.id === statusModalLead.id);
+                    if (lead) {
+                      const precedingDate = getPrecedingStatusDate(lead, statusModalLead.targetStatus);
+                      if (precedingDate) {
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedStatusDate(precedingDate)}
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold px-2 py-1 rounded transition-colors"
+                          >
+                            Same as previous ({formatDate(precedingDate)})
+                          </button>
+                        );
+                      }
+                    }
+                    return null;
+                  })()}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStatusDate("")}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold px-2 py-1 rounded transition-colors"
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
+
+              {/* Special field for Won deal value */}
+              {statusModalLead.targetStatus === 'won' && (
+                <div className="space-y-1.5">
+                  <label className="text-xs text-slate-400 font-semibold block">
+                    Agreed Deal Value (£)
+                  </label>
+                  <input
+                    type="number"
+                    value={wonDealValue}
+                    onChange={e => setWonDealValue(Number(e.target.value))}
+                    min={1}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-indigo-500 font-sans"
+                  />
+                  <p className="text-[10px] text-slate-500 leading-normal">
+                    Specify the agreed value of the website deal rather than assuming it at the original offer price.
+                  </p>
+                </div>
+              )}
+
+              {/* Special dropdowns for Negative Outcomes */}
+              {['lost', 'not_suitable', 'no_response'].includes(statusModalLead.targetStatus) && (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-slate-400 font-semibold block">
+                      Outcome Reason
+                    </label>
+                    <select
+                      value={outcomeReason}
+                      onChange={e => setOutcomeReason(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500 font-medium"
+                    >
+                      <option value="" className="bg-slate-905 text-slate-100">-- Select a reason --</option>
+                      {statusModalLead.targetStatus === 'lost' && (
+                        <>
+                          <option value="Already has website" className="bg-slate-905 text-slate-100">Already has website</option>
+                          <option value="Not interested" className="bg-slate-905 text-slate-100">Not interested</option>
+                          <option value="Budget constraint" className="bg-slate-905 text-slate-100">Budget constraint</option>
+                          <option value="No need/Too small" className="bg-slate-905 text-slate-100">No need/Too small</option>
+                          <option value="Other" className="bg-slate-905 text-slate-100">Other</option>
+                        </>
+                      )}
+                      {statusModalLead.targetStatus === 'not_suitable' && (
+                        <>
+                          <option value="Not local" className="bg-slate-905 text-slate-100">Not local</option>
+                          <option value="Out of business / Inactive" className="bg-slate-905 text-slate-100">Out of business / Inactive</option>
+                          <option value="Wrong industry classification" className="bg-slate-905 text-slate-100">Wrong industry classification</option>
+                          <option value="Other" className="bg-slate-905 text-slate-100">Other</option>
+                        </>
+                      )}
+                      {statusModalLead.targetStatus === 'no_response' && (
+                        <>
+                          <option value="No answer phone/email" className="bg-slate-905 text-slate-100">No answer phone/email</option>
+                          <option value="Letter returned" className="bg-slate-905 text-slate-100">Letter returned</option>
+                          <option value="Other" className="bg-slate-905 text-slate-100">Other</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+
+                  {outcomeReason === 'Other' && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs text-slate-400 font-semibold block">
+                        Specify Reason
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Please detail..."
+                        value={outcomeReasonOther}
+                        onChange={e => setOutcomeReasonOther(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-indigo-500 font-sans"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            {/* Modal Footer */}
+
             <div className="px-6 py-4 bg-slate-950/40 border-t border-slate-850 flex justify-end gap-3">
               <button
                 type="button"
-                onClick={() => setDeliveryDatePromptLead(null)}
+                onClick={() => setStatusModalLead(null)}
                 className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer active:scale-95"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={handleSaveDeliveryDate}
-                disabled={!selectedDeliveryDate}
-                className={`px-4 py-2 rounded-xl text-xs font-semibold shadow-md transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer ${
-                  selectedDeliveryDate
-                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/10'
-                    : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
-                }`}
+                onClick={handleSaveStatusDetails}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-md shadow-indigo-600/10 transition-all cursor-pointer active:scale-95"
               >
-                ✓ Confirm Delivery
+                ✓ Save Details
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Milestone Config Modal */}
+      {isMilestoneModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 no-print animate-fade-in">
+          <form onSubmit={handleSaveMilestoneConfig} className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="px-6 py-4 border-b border-slate-850 flex items-center justify-between bg-slate-900/60">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span>🏆</span> {editingMilestone ? "Edit Milestone" : "Add Motivation Milestone"}
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Specify tracked metric targets and rewards to motivate the sales funnel.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4 text-sm">
+              {/* Title */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-400 font-semibold block">
+                  Milestone Title
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 100 Letters Delivered"
+                  value={mFormTitle}
+                  onChange={e => setMFormTitle(e.target.value)}
+                  required
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-indigo-500 font-sans"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {/* Type */}
+                <div className="space-y-1.5">
+                  <label className="text-xs text-slate-400 font-semibold block">
+                    Type
+                  </label>
+                  <select
+                    value={mFormType}
+                    onChange={e => setMFormType(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 font-medium"
+                  >
+                    <option value="activity" className="bg-slate-900 text-slate-100">Activity</option>
+                    <option value="conversion" className="bg-slate-900 text-slate-100">Conversion</option>
+                    <option value="revenue" className="bg-slate-900 text-slate-100">Revenue</option>
+                    <option value="category" className="bg-slate-900 text-slate-100">Category Unlock</option>
+                  </select>
+                </div>
+
+                {/* Target Value */}
+                <div className="space-y-1.5">
+                  <label className="text-xs text-slate-400 font-semibold block">
+                    Target Value
+                  </label>
+                  <input
+                    type="number"
+                    value={mFormTargetValue}
+                    onChange={e => setMFormTargetValue(Number(e.target.value))}
+                    min={1}
+                    required
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-indigo-500 font-sans"
+                  />
+                </div>
+              </div>
+
+              {/* Metric Select */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-400 font-semibold block">
+                  Tracked Metric
+                </label>
+                <select
+                  value={mFormMetric}
+                  onChange={e => setMFormMetric(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+                >
+                  <option value="letters_delivered" className="bg-slate-900 text-slate-100">Letters Delivered</option>
+                  <option value="follow_ups_sent" className="bg-slate-900 text-slate-100">Follow-ups Sent</option>
+                  <option value="first_enquiry" className="bg-slate-900 text-slate-100">First Response/Enquiry</option>
+                  <option value="first_meeting" className="bg-slate-900 text-slate-100">First Meeting Booked</option>
+                  <option value="first_proposal" className="bg-slate-900 text-slate-100">First Proposal Sent</option>
+                  <option value="first_client" className="bg-slate-900 text-slate-100">First Client Won</option>
+                  <option value="total_revenue" className="bg-slate-900 text-slate-100">Total Revenue (£)</option>
+                  <option value="mrr" className="bg-slate-900 text-slate-100">MRR (£)</option>
+                  <option value="first_trades_client" className="bg-slate-900 text-slate-100">First Local Trades Won</option>
+                  <option value="first_professional_services_client" className="bg-slate-900 text-slate-100">First Professional Services Won</option>
+                  <option value="first_software_project" className="bg-slate-900 text-slate-100">First Software Project Won</option>
+                </select>
+              </div>
+
+              {/* Reward offered */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-400 font-semibold block">
+                  Reward Offered
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Pizza Party / early finish / champagne"
+                  value={mFormReward}
+                  onChange={e => setMFormReward(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-indigo-500 font-sans"
+                />
+              </div>
+
+              {/* Celebration notes */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-400 font-semibold block">
+                  Celebration / Success Notes
+                </label>
+                <textarea
+                  placeholder="Notes about how this milestone was celebrated..."
+                  value={mFormCelebrationNotes}
+                  onChange={e => setMFormCelebrationNotes(e.target.value)}
+                  rows={2}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 font-sans"
+                />
+              </div>
+
+              {/* Archived Status */}
+              <div className="flex items-center gap-2 pt-2">
+                <input
+                  type="checkbox"
+                  id="mFormArchived"
+                  checked={mFormArchived}
+                  onChange={e => setMFormArchived(e.target.checked)}
+                  className="h-4.5 w-4.5 rounded border-slate-800 text-indigo-600 bg-slate-950 accent-indigo-500 cursor-pointer"
+                />
+                <label htmlFor="mFormArchived" className="text-xs text-slate-300 font-medium select-none cursor-pointer">
+                  Archive this milestone (hide from standard motivational list)
+                </label>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-950/40 border-t border-slate-850 flex justify-between gap-3">
+              <div>
+                {editingMilestone && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteMilestone(editingMilestone.id)}
+                    className="bg-red-950/20 border border-red-900/40 hover:bg-red-900 hover:text-white text-red-400 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer active:scale-95"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMilestoneModalOpen(false);
+                    setEditingMilestone(null);
+                  }}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer active:scale-95"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-md shadow-indigo-600/10 transition-all cursor-pointer active:scale-95"
+                >
+                  ✓ Confirm
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
       )}
 

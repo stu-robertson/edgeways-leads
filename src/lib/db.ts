@@ -45,9 +45,83 @@ export async function initDb() {
     ALTER TABLE leads ADD COLUMN IF NOT EXISTS directors JSONB;
     ALTER TABLE leads ADD COLUMN IF NOT EXISTS delivery_date DATE;
 
-    -- Drop old check constraint and recreate it with the new set of statuses (removing ignored)
+    -- Add tracking columns for template versions and funnel dates
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS base_version TEXT;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS category_variant TEXT;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS full_template_key TEXT;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS offer_price INTEGER DEFAULT 300;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS printed_date DATE;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS first_response_date DATE;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS first_call_date DATE;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS meeting_booked_date DATE;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS meeting_completed_date DATE;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS proposal_sent_date DATE;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS follow_up_sent_date DATE;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS won_date DATE;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS lost_date DATE;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS not_suitable_date DATE;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS no_response_date DATE;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS outcome_reason TEXT;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS outcome_reason_other TEXT;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS phone TEXT;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS email TEXT;
+    ALTER TABLE leads ADD COLUMN IF NOT EXISTS contact_name TEXT;
+
+    -- Migrate old statuses to new statuses
+    UPDATE leads SET status = 'responded' WHERE status = 'interested';
+    UPDATE leads SET status = 'meeting_booked' WHERE status = 'meeting';
+    UPDATE leads SET status = 'proposal_sent' WHERE status = 'quote';
+
+    -- Auto-set historical dates to keep analytics aligned for old leads
+    UPDATE leads SET won_date = COALESCE(delivery_date, created_at::date) WHERE status = 'won' AND won_date IS NULL;
+    UPDATE leads SET lost_date = COALESCE(delivery_date, created_at::date) WHERE status = 'lost' AND lost_date IS NULL;
+    UPDATE leads SET printed_date = created_at::date WHERE status IN ('printed', 'delivered', 'responded', 'first_call', 'meeting_booked', 'meeting_completed', 'proposal_sent', 'follow_up_sent', 'won', 'lost') AND printed_date IS NULL;
+    UPDATE leads SET delivery_date = created_at::date WHERE status IN ('delivered', 'responded', 'first_call', 'meeting_booked', 'meeting_completed', 'proposal_sent', 'follow_up_sent', 'won', 'lost') AND delivery_date IS NULL;
+
+    -- Drop old check constraint and recreate it with the new set of 13 statuses
     ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_status_check;
-    ALTER TABLE leads ADD CONSTRAINT leads_status_check CHECK (status IN ('new', 'printed', 'delivered', 'interested', 'meeting', 'quote', 'won', 'lost'));
+    ALTER TABLE leads ADD CONSTRAINT leads_status_check CHECK (status IN ('new', 'printed', 'delivered', 'responded', 'first_call', 'meeting_booked', 'meeting_completed', 'proposal_sent', 'follow_up_sent', 'won', 'lost', 'not_suitable', 'no_response'));
+
+    -- Create milestones table
+    CREATE TABLE IF NOT EXISTS milestones (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      type TEXT NOT NULL,
+      metric TEXT NOT NULL,
+      target_value NUMERIC NOT NULL,
+      reward TEXT,
+      completed_date TIMESTAMPTZ,
+      celebration_notes TEXT
+    );
+
+    ALTER TABLE milestones ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE;
+
+    -- Enable RLS for milestones
+    ALTER TABLE milestones ENABLE ROW LEVEL SECURITY;
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE tablename = 'milestones' AND policyname = 'allow_all_milestones'
+      ) THEN
+        CREATE POLICY allow_all_milestones ON milestones FOR ALL USING (true) WITH CHECK (true);
+      END IF;
+    END
+    $$;
+
+    -- Seed the initial milestones
+    INSERT INTO milestones (id, title, type, metric, target_value, reward) VALUES
+      ('letters_delivered_100', '100 Letters Delivered', 'activity', 'letters_delivered', 100, 'Team dinner'),
+      ('follow_ups_sent_50', '50 Follow-ups Sent', 'activity', 'follow_ups_sent', 50, 'Friday early finish'),
+      ('first_enquiry', 'First Enquiry', 'conversion', 'first_enquiry', 1, 'Celebrate with coffee'),
+      ('first_meeting', 'First Meeting', 'conversion', 'first_meeting', 1, 'Nice lunch'),
+      ('first_proposal', 'First Proposal', 'conversion', 'first_proposal', 1, 'Team drinks'),
+      ('first_client', 'First Client', 'conversion', 'first_client', 1, 'Bottle of champagne!'),
+      ('total_revenue_1000', '£1,000 Total Revenue', 'revenue', 'total_revenue', 1000, 'Bonus reward'),
+      ('mrr_500', '£500 Monthly Recurring Revenue', 'revenue', 'mrr', 500, 'Company celebration'),
+      ('first_trades_client', 'First Trades Client', 'category', 'first_trades_client', 1, 'Trade sector unlock reward'),
+      ('first_professional_services_client', 'First Professional Services Client', 'category', 'first_professional_services_client', 1, 'Professional sector unlock reward'),
+      ('first_software_project', 'First Software Project', 'category', 'first_software_project', 1, 'Software sector unlock reward')
+    ON CONFLICT (id) DO NOTHING;
 
     -- Enable Row Level Security (RLS) for RLS-first design / Supabase compatibility
     ALTER TABLE watched_locations ENABLE ROW LEVEL SECURITY;
@@ -306,10 +380,30 @@ export interface Lead {
   sic_codes: string | null;
   industry_category: string | null;
   directors: { name: string; address: string }[] | null;
-  status: 'new' | 'printed' | 'delivered' | 'interested' | 'meeting' | 'quote' | 'won' | 'lost';
+  status: 'new' | 'printed' | 'delivered' | 'responded' | 'first_call' | 'meeting_booked' | 'meeting_completed' | 'proposal_sent' | 'follow_up_sent' | 'won' | 'lost' | 'not_suitable' | 'no_response';
   notes: string | null;
   next_contact_date: string | null;
+  phone: string | null;
+  email: string | null;
+  contact_name: string | null;
   delivery_date: string | null;
+  base_version: string | null;
+  category_variant: string | null;
+  full_template_key: string | null;
+  offer_price: number | null;
+  printed_date: string | null;
+  first_response_date: string | null;
+  first_call_date: string | null;
+  meeting_booked_date: string | null;
+  meeting_completed_date: string | null;
+  proposal_sent_date: string | null;
+  follow_up_sent_date: string | null;
+  won_date: string | null;
+  lost_date: string | null;
+  not_suitable_date: string | null;
+  no_response_date: string | null;
+  outcome_reason: string | null;
+  outcome_reason_other: string | null;
   created_at: string;
 }
 
@@ -361,7 +455,12 @@ export async function deleteWatchedLocation(id: string): Promise<void> {
 export async function getLeads(): Promise<Lead[]> {
   try {
     const res = await pool.query(
-      "SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, industry_category, directors, status, notes, next_contact_date::text, delivery_date::text, created_at::text FROM leads ORDER BY incorporation_date DESC, created_at DESC"
+      `SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, industry_category, directors, status, notes, 
+              next_contact_date::text, phone, email, contact_name, delivery_date::text, base_version, category_variant, full_template_key, offer_price,
+              printed_date::text, first_response_date::text, first_call_date::text, meeting_booked_date::text, meeting_completed_date::text, 
+              proposal_sent_date::text, follow_up_sent_date::text, won_date::text, lost_date::text, not_suitable_date::text, no_response_date::text,
+              outcome_reason, outcome_reason_other, created_at::text 
+       FROM leads ORDER BY incorporation_date DESC, created_at DESC`
     );
     
     return res.rows.map(row => ({
@@ -374,13 +473,25 @@ export async function getLeads(): Promise<Lead[]> {
   }
 }
 
-export async function saveLead(lead: Omit<Lead, "id" | "created_at" | "status" | "notes" | "next_contact_date" | "delivery_date">): Promise<Lead> {
+export interface SaveLeadInput {
+  company_number: string;
+  name: string;
+  incorporation_date: string;
+  postcode: string | null;
+  address: string | null;
+  sic_codes: string | null;
+  industry_category: string | null;
+  directors: { name: string; address: string }[] | null;
+  status?: Lead["status"];
+}
+
+export async function saveLead(lead: SaveLeadInput): Promise<Lead> {
   const id = generateUUIDv7();
   try {
     await pool.query(
       `
       INSERT INTO leads (id, company_number, name, incorporation_date, postcode, address, sic_codes, industry_category, directors, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'new')
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       ON CONFLICT(company_number) DO UPDATE SET
         name = EXCLUDED.name,
         incorporation_date = EXCLUDED.incorporation_date,
@@ -388,7 +499,8 @@ export async function saveLead(lead: Omit<Lead, "id" | "created_at" | "status" |
         address = EXCLUDED.address,
         sic_codes = EXCLUDED.sic_codes,
         industry_category = EXCLUDED.industry_category,
-        directors = EXCLUDED.directors
+        directors = EXCLUDED.directors,
+        status = COALESCE(NULLIF(EXCLUDED.status, 'new'), leads.status)
       `,
       [
         id,
@@ -399,12 +511,13 @@ export async function saveLead(lead: Omit<Lead, "id" | "created_at" | "status" |
         lead.address,
         lead.sic_codes,
         lead.industry_category,
-        lead.directors ? JSON.stringify(lead.directors) : null
+        lead.directors ? JSON.stringify(lead.directors) : null,
+        lead.status || 'new'
       ]
     );
 
     const res = await pool.query(
-      "SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, industry_category, directors, status, notes, next_contact_date::text, delivery_date::text, created_at::text FROM leads WHERE company_number = $1",
+      "SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, industry_category, directors, status, notes, next_contact_date::text, phone, email, contact_name, delivery_date::text, created_at::text FROM leads WHERE company_number = $1",
       [lead.company_number]
     );
     
@@ -419,29 +532,24 @@ export async function saveLead(lead: Omit<Lead, "id" | "created_at" | "status" |
   }
 }
 
-export async function updateLead(id: string, updates: { status?: Lead["status"]; notes?: string | null; next_contact_date?: string | null; delivery_date?: string | null }): Promise<Lead> {
+export async function updateLead(id: string, updates: Partial<Lead>): Promise<Lead> {
   const fields: string[] = [];
   const params: any[] = [];
   let paramIndex = 1;
 
-  if (updates.status !== undefined) {
-    fields.push(`status = $${paramIndex++}`);
-    params.push(updates.status);
-  }
+  const allowedKeys = [
+    "status", "notes", "next_contact_date", "phone", "email", "contact_name", "delivery_date",
+    "base_version", "category_variant", "full_template_key", "offer_price",
+    "printed_date", "first_response_date", "first_call_date", "meeting_booked_date",
+    "meeting_completed_date", "proposal_sent_date", "follow_up_sent_date", "won_date",
+    "lost_date", "not_suitable_date", "no_response_date", "outcome_reason", "outcome_reason_other"
+  ];
 
-  if (updates.notes !== undefined) {
-    fields.push(`notes = $${paramIndex++}`);
-    params.push(updates.notes);
-  }
-
-  if (updates.next_contact_date !== undefined) {
-    fields.push(`next_contact_date = $${paramIndex++}`);
-    params.push(updates.next_contact_date || null);
-  }
-
-  if (updates.delivery_date !== undefined) {
-    fields.push(`delivery_date = $${paramIndex++}`);
-    params.push(updates.delivery_date || null);
+  for (const key of allowedKeys) {
+    if (updates[key as keyof typeof updates] !== undefined) {
+      fields.push(`${key} = $${paramIndex++}`);
+      params.push(updates[key as keyof typeof updates] ?? null);
+    }
   }
 
   if (fields.length > 0) {
@@ -457,7 +565,12 @@ export async function updateLead(id: string, updates: { status?: Lead["status"];
 
   try {
     const res = await pool.query(
-      "SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, industry_category, directors, status, notes, next_contact_date::text, delivery_date::text, created_at::text FROM leads WHERE id = $1",
+      `SELECT id, company_number, name, incorporation_date::text, postcode, address, sic_codes, industry_category, directors, status, notes, 
+              next_contact_date::text, phone, email, contact_name, delivery_date::text, base_version, category_variant, full_template_key, offer_price,
+              printed_date::text, first_response_date::text, first_call_date::text, meeting_booked_date::text, meeting_completed_date::text, 
+              proposal_sent_date::text, follow_up_sent_date::text, won_date::text, lost_date::text, not_suitable_date::text, no_response_date::text,
+              outcome_reason, outcome_reason_other, created_at::text 
+       FROM leads WHERE id = $1`,
       [id]
     );
     const row = res.rows[0];
@@ -479,3 +592,94 @@ export async function deleteLead(id: string): Promise<void> {
     throw error;
   }
 }
+
+// --- Milestones ---
+export interface Milestone {
+  id: string;
+  title: string;
+  type: 'activity' | 'conversion' | 'revenue' | 'category';
+  metric: string;
+  target_value: number;
+  current_value?: number;
+  reward: string | null;
+  completed_date: string | null;
+  celebration_notes: string | null;
+  archived?: boolean;
+}
+
+export async function getMilestones(): Promise<Milestone[]> {
+  try {
+    const res = await pool.query(
+      "SELECT id, title, type, metric, target_value::float as target_value, reward, completed_date::text, celebration_notes, archived FROM milestones ORDER BY type ASC, target_value ASC"
+    );
+    return res.rows as Milestone[];
+  } catch (error) {
+    console.error("Error fetching milestones:", error);
+    return [];
+  }
+}
+
+export async function updateMilestone(
+  id: string,
+  completed_date: string | null,
+  celebration_notes: string | null,
+  archived?: boolean
+): Promise<Milestone> {
+  try {
+    await pool.query(
+      `UPDATE milestones 
+       SET completed_date = $1, celebration_notes = $2, archived = COALESCE($3, archived)
+       WHERE id = $4`,
+      [completed_date || null, celebration_notes || null, archived === undefined ? null : archived, id]
+    );
+
+    const res = await pool.query(
+      "SELECT id, title, type, metric, target_value::float as target_value, reward, completed_date::text, celebration_notes, archived FROM milestones WHERE id = $1",
+      [id]
+    );
+    return res.rows[0] as Milestone;
+  } catch (error) {
+    console.error(`Error updating milestone ${id}:`, error);
+    throw error;
+  }
+}
+
+export async function saveMilestone(m: Milestone): Promise<Milestone> {
+  try {
+    const checkRes = await pool.query("SELECT id FROM milestones WHERE id = $1", [m.id]);
+    if (checkRes.rows.length > 0) {
+      // Update
+      await pool.query(
+        `UPDATE milestones
+         SET title = $1, type = $2, metric = $3, target_value = $4, reward = $5, completed_date = $6, celebration_notes = $7, archived = $8
+         WHERE id = $9`,
+        [m.title, m.type, m.metric, m.target_value, m.reward, m.completed_date || null, m.celebration_notes || null, m.archived || false, m.id]
+      );
+    } else {
+      // Insert
+      await pool.query(
+        `INSERT INTO milestones (id, title, type, metric, target_value, reward, completed_date, celebration_notes, archived)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [m.id, m.title, m.type, m.metric, m.target_value, m.reward, m.completed_date || null, m.celebration_notes || null, m.archived || false]
+      );
+    }
+    const res = await pool.query(
+      "SELECT id, title, type, metric, target_value::float as target_value, reward, completed_date::text, celebration_notes, archived FROM milestones WHERE id = $1",
+      [m.id]
+    );
+    return res.rows[0] as Milestone;
+  } catch (error) {
+    console.error(`Error saving milestone ${m.id}:`, error);
+    throw error;
+  }
+}
+
+export async function deleteMilestone(id: string): Promise<void> {
+  try {
+    await pool.query("DELETE FROM milestones WHERE id = $1", [id]);
+  } catch (error) {
+    console.error(`Error deleting milestone ${id}:`, error);
+    throw error;
+  }
+}
+
