@@ -3036,16 +3036,18 @@ export default function Home() {
                   </div>
 
                   {/* Footer info */}
-                  <div className="mt-8 pt-4 border-t border-zinc-150 text-[10px] text-zinc-400 font-sans tracking-wide text-center space-y-1.5">
-                    <div>74 Broadlee, Wilnecote, Tamworth, B77 4PG</div>
-                    <div className="text-zinc-500 flex justify-center gap-3 text-[9px]">
-                      <span>{senderPhone}</span>
-                      <span>&bull;</span>
-                      <span>{senderEmail}</span>
-                      <span>&bull;</span>
-                      <span>{senderWebsite}</span>
+                    <div className="mt-8 pt-4 border-t border-zinc-200 text-center">
+                      <div className="text-xs text-slate-500 mb-2">
+                        74 Broadlee, Wilnecote, Tamworth, B77 4PG
+                      </div>
+
+                      <div className="text-sm text-slate-700">
+                        <div>{senderPhone}</div>
+                        <div>
+                          {senderEmail} • {senderWebsite}
+                        </div>
+                      </div>
                     </div>
-                  </div>
                 </div>
               </div>
 
@@ -3138,10 +3140,21 @@ export default function Home() {
                   const lead = pageLeads[cellIdx];
                   if (lead) {
                     return (
-                      <div key={lead.id} className="print-label-cell">
-                        <div className="font-bold text-[10px] uppercase tracking-tight truncate mb-0.5">{lead.name}</div>
+                      <div
+                        key={lead.id}
+                        className="print-label-cell overflow-hidden px-2 py-1"
+                      >
+                        <div className="font-bold text-[12px] uppercase tracking-tight truncate leading-tight mb-0.5">
+                          {lead.name}
+                        </div>
+
                         {formatAddressParts(lead.address).map((part, pIdx) => (
-                          <div key={pIdx} className="text-[9px] truncate leading-snug">{part}</div>
+                          <div
+                            key={pIdx}
+                            className="text-[11px] truncate leading-tight"
+                          >
+                            {part}
+                          </div>
                         ))}
                       </div>
                     );
