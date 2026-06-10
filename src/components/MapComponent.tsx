@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useMemo } from "react";
 import { Lead } from "@/lib/db";
 import { toProperCase } from "@/lib/templates";
 
@@ -40,14 +40,16 @@ export const MapComponent = ({ leads, onUpdateStatus, onPrintMap }: MapComponent
     document.head.appendChild(script);
   }, []);
 
-  const printedLeads = leads.filter(l => l.status === "printed");
+  const printedLeads = useMemo(() => leads.filter(l => l.status === "printed"), [leads]);
 
   // Sort them by postcode to group nearby delivery locations
-  const sortedPrintedLeads = [...printedLeads].sort((a, b) => {
-    const pcA = (a.postcode || "").trim().toUpperCase();
-    const pcB = (b.postcode || "").trim().toUpperCase();
-    return pcA.localeCompare(pcB);
-  });
+  const sortedPrintedLeads = useMemo(() => {
+    return [...printedLeads].sort((a, b) => {
+      const pcA = (a.postcode || "").trim().toUpperCase();
+      const pcB = (b.postcode || "").trim().toUpperCase();
+      return pcA.localeCompare(pcB);
+    });
+  }, [printedLeads]);
 
   // Geocode location postcodes using Postcodes.io API
   useEffect(() => {
@@ -125,61 +127,54 @@ export const MapComponent = ({ leads, onUpdateStatus, onPrintMap }: MapComponent
       }
     }
 
-    // Remove obsolete markers
-    const currentLeadIds = new Set(printedLeads.map(l => l.id));
+    // Clear all existing markers from the map before drawing the fresh ones
     Object.keys(markersRef.current).forEach(id => {
-      if (!currentLeadIds.has(id)) {
-        markersRef.current[id].remove();
-        delete markersRef.current[id];
-      }
+      markersRef.current[id].remove();
     });
+    markersRef.current = {};
 
-    // Add or update markers
+    // Add fresh markers with correct numbering
     printedLeads.forEach(lead => {
       const pc = lead.postcode?.trim().toUpperCase();
       if (!pc || !coordinates[pc]) return;
 
       const { lat, lng } = coordinates[pc];
+      const idx = sortedPrintedLeads.findIndex(l => l.id === lead.id) + 1;
+      
+      // Custom div icon for nice appearance
+      const iconHtml = `
+        <div class="relative flex items-center justify-center w-8 h-8 rounded-full bg-[#35b0f3] text-white font-bold text-xs shadow-md border-2 border-white">
+          ${idx}
+        </div>
+      `;
+      
+      const customIcon = L.divIcon({
+        html: iconHtml,
+        className: "custom-leaflet-icon",
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      });
 
-      if (!markersRef.current[lead.id]) {
-        // Create custom marker with number badge
-        const idx = sortedPrintedLeads.findIndex(l => l.id === lead.id) + 1;
-        
-        // Custom div icon for nice appearance
-        const iconHtml = `
-          <div class="relative flex items-center justify-center w-8 h-8 rounded-full bg-[#35b0f3] text-white font-bold text-xs shadow-md border-2 border-white">
-            ${idx}
+      const marker = L.marker([lat, lng], { icon: customIcon }).addTo(leafletMapRef.current);
+      
+      // Popup content
+      const popupContent = `
+        <div class="p-2 text-zinc-950 max-w-[200px]">
+          <h4 class="font-bold text-sm mb-1">${toProperCase(lead.name)}</h4>
+          <p class="text-xs text-zinc-500 mb-2">${lead.address || "No address"}</p>
+          <div class="flex gap-1.5 mt-2">
+            <button 
+              onclick="window.leafletUpdateLeadStatus('${lead.id}', 'delivered')"
+              class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[10px] px-2 py-1 rounded transition-all cursor-pointer"
+            >
+              Mark Delivered
+            </button>
           </div>
-        `;
-        
-        const customIcon = L.divIcon({
-          html: iconHtml,
-          className: "custom-leaflet-icon",
-          iconSize: [32, 32],
-          iconAnchor: [16, 16],
-        });
-
-        const marker = L.marker([lat, lng], { icon: customIcon }).addTo(leafletMapRef.current);
-        
-        // Popup content
-        const popupContent = `
-          <div class="p-2 text-zinc-950 max-w-[200px]">
-            <h4 class="font-bold text-sm mb-1">${toProperCase(lead.name)}</h4>
-            <p class="text-xs text-zinc-500 mb-2">${lead.address || "No address"}</p>
-            <div class="flex gap-1.5 mt-2">
-              <button 
-                onclick="window.leafletUpdateLeadStatus('${lead.id}', 'delivered')"
-                class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[10px] px-2 py-1 rounded transition-all cursor-pointer"
-              >
-                Mark Delivered
-              </button>
-            </div>
-          </div>
-        `;
-        
-        marker.bindPopup(popupContent);
-        markersRef.current[lead.id] = marker;
-      }
+        </div>
+      `;
+      
+      marker.bindPopup(popupContent);
+      markersRef.current[lead.id] = marker;
     });
 
     // Attach global helper callback for marker popup click handler
@@ -189,7 +184,7 @@ export const MapComponent = ({ leads, onUpdateStatus, onPrintMap }: MapComponent
         onUpdateStatus(id, lead.name, status);
       }
     };
-  }, [leafletLoaded, printedLeads, coordinates, sortedPrintedLeads, leads, onUpdateStatus]);
+  }, [leafletLoaded, printedLeads, sortedPrintedLeads, coordinates, leads, onUpdateStatus]);
 
   return (
     <div className="bg-slate-900 border border-slate-850 rounded-2xl p-6 map-component-root space-y-4">
