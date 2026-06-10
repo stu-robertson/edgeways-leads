@@ -79,6 +79,71 @@ export async function initDb() {
     UPDATE leads SET printed_date = created_at::date WHERE status IN ('printed', 'delivered', 'responded', 'first_call', 'meeting_booked', 'meeting_completed', 'proposal_sent', 'follow_up_sent', 'won', 'lost') AND printed_date IS NULL;
     UPDATE leads SET delivery_date = created_at::date WHERE status IN ('delivered', 'responded', 'first_call', 'meeting_booked', 'meeting_completed', 'proposal_sent', 'follow_up_sent', 'won', 'lost') AND delivery_date IS NULL;
 
+    -- Clean up invalid status dates when a status has been reverted/demoted or negative outcome set
+    UPDATE leads SET 
+      printed_date = NULL, delivery_date = NULL, first_response_date = NULL, first_call_date = NULL,
+      meeting_booked_date = NULL, meeting_completed_date = NULL, proposal_sent_date = NULL,
+      follow_up_sent_date = NULL, won_date = NULL, lost_date = NULL, not_suitable_date = NULL,
+      no_response_date = NULL, outcome_reason = NULL, outcome_reason_other = NULL
+    WHERE status = 'new';
+
+    UPDATE leads SET 
+      delivery_date = NULL, first_response_date = NULL, first_call_date = NULL,
+      meeting_booked_date = NULL, meeting_completed_date = NULL, proposal_sent_date = NULL,
+      follow_up_sent_date = NULL, won_date = NULL, lost_date = NULL, not_suitable_date = NULL,
+      no_response_date = NULL, outcome_reason = NULL, outcome_reason_other = NULL
+    WHERE status = 'printed';
+
+    UPDATE leads SET 
+      first_response_date = NULL, first_call_date = NULL,
+      meeting_booked_date = NULL, meeting_completed_date = NULL, proposal_sent_date = NULL,
+      follow_up_sent_date = NULL, won_date = NULL, lost_date = NULL, not_suitable_date = NULL,
+      no_response_date = NULL, outcome_reason = NULL, outcome_reason_other = NULL
+    WHERE status = 'delivered';
+
+    UPDATE leads SET 
+      first_call_date = NULL, meeting_booked_date = NULL, meeting_completed_date = NULL,
+      proposal_sent_date = NULL, follow_up_sent_date = NULL, won_date = NULL, lost_date = NULL,
+      not_suitable_date = NULL, no_response_date = NULL, outcome_reason = NULL, outcome_reason_other = NULL
+    WHERE status = 'responded';
+
+    UPDATE leads SET 
+      meeting_booked_date = NULL, meeting_completed_date = NULL, proposal_sent_date = NULL,
+      follow_up_sent_date = NULL, won_date = NULL, lost_date = NULL, not_suitable_date = NULL,
+      no_response_date = NULL, outcome_reason = NULL, outcome_reason_other = NULL
+    WHERE status = 'first_call';
+
+    UPDATE leads SET 
+      meeting_completed_date = NULL, proposal_sent_date = NULL, follow_up_sent_date = NULL,
+      won_date = NULL, lost_date = NULL, not_suitable_date = NULL, no_response_date = NULL,
+      outcome_reason = NULL, outcome_reason_other = NULL
+    WHERE status = 'meeting_booked';
+
+    UPDATE leads SET 
+      proposal_sent_date = NULL, follow_up_sent_date = NULL, won_date = NULL, lost_date = NULL,
+      not_suitable_date = NULL, no_response_date = NULL, outcome_reason = NULL, outcome_reason_other = NULL
+    WHERE status = 'meeting_completed';
+
+    UPDATE leads SET 
+      follow_up_sent_date = NULL, won_date = NULL, lost_date = NULL, not_suitable_date = NULL,
+      no_response_date = NULL, outcome_reason = NULL, outcome_reason_other = NULL
+    WHERE status = 'proposal_sent';
+
+    UPDATE leads SET 
+      won_date = NULL, lost_date = NULL, not_suitable_date = NULL, no_response_date = NULL,
+      outcome_reason = NULL, outcome_reason_other = NULL
+    WHERE status = 'follow_up_sent';
+
+    UPDATE leads SET 
+      lost_date = NULL, not_suitable_date = NULL, no_response_date = NULL,
+      outcome_reason = NULL, outcome_reason_other = NULL
+    WHERE status = 'won';
+
+    UPDATE leads SET won_date = NULL, not_suitable_date = NULL, no_response_date = NULL WHERE status = 'lost';
+    UPDATE leads SET won_date = NULL, lost_date = NULL, no_response_date = NULL WHERE status = 'not_suitable';
+    UPDATE leads SET won_date = NULL, lost_date = NULL, not_suitable_date = NULL WHERE status = 'no_response';
+
+
     -- Drop old check constraint and recreate it with the new set of 13 statuses
     ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_status_check;
     ALTER TABLE leads ADD CONSTRAINT leads_status_check CHECK (status IN ('new', 'printed', 'delivered', 'responded', 'first_call', 'meeting_booked', 'meeting_completed', 'proposal_sent', 'follow_up_sent', 'won', 'lost', 'not_suitable', 'no_response'));
@@ -629,6 +694,74 @@ export async function updateLead(id: string, updates: Partial<Lead>): Promise<Le
     "meeting_completed_date", "proposal_sent_date", "follow_up_sent_date", "won_date",
     "lost_date", "not_suitable_date", "no_response_date", "outcome_reason", "outcome_reason_other"
   ];
+
+  const STATUS_FIELDS_TO_CLEAR: Record<string, string[]> = {
+    new: [
+      "printed_date", "delivery_date", "first_response_date", "first_call_date",
+      "meeting_booked_date", "meeting_completed_date", "proposal_sent_date",
+      "follow_up_sent_date", "won_date", "lost_date", "not_suitable_date",
+      "no_response_date", "outcome_reason", "outcome_reason_other"
+    ],
+    printed: [
+      "delivery_date", "first_response_date", "first_call_date",
+      "meeting_booked_date", "meeting_completed_date", "proposal_sent_date",
+      "follow_up_sent_date", "won_date", "lost_date", "not_suitable_date",
+      "no_response_date", "outcome_reason", "outcome_reason_other"
+    ],
+    delivered: [
+      "first_response_date", "first_call_date",
+      "meeting_booked_date", "meeting_completed_date", "proposal_sent_date",
+      "follow_up_sent_date", "won_date", "lost_date", "not_suitable_date",
+      "no_response_date", "outcome_reason", "outcome_reason_other"
+    ],
+    responded: [
+      "first_call_date", "meeting_booked_date", "meeting_completed_date",
+      "proposal_sent_date", "follow_up_sent_date", "won_date", "lost_date",
+      "not_suitable_date", "no_response_date", "outcome_reason", "outcome_reason_other"
+    ],
+    first_call: [
+      "meeting_booked_date", "meeting_completed_date", "proposal_sent_date",
+      "follow_up_sent_date", "won_date", "lost_date", "not_suitable_date",
+      "no_response_date", "outcome_reason", "outcome_reason_other"
+    ],
+    meeting_booked: [
+      "meeting_completed_date", "proposal_sent_date", "follow_up_sent_date",
+      "won_date", "lost_date", "not_suitable_date", "no_response_date",
+      "outcome_reason", "outcome_reason_other"
+    ],
+    meeting_completed: [
+      "proposal_sent_date", "follow_up_sent_date", "won_date", "lost_date",
+      "not_suitable_date", "no_response_date", "outcome_reason", "outcome_reason_other"
+    ],
+    proposal_sent: [
+      "follow_up_sent_date", "won_date", "lost_date", "not_suitable_date",
+      "no_response_date", "outcome_reason", "outcome_reason_other"
+    ],
+    follow_up_sent: [
+      "won_date", "lost_date", "not_suitable_date", "no_response_date",
+      "outcome_reason", "outcome_reason_other"
+    ],
+    won: [
+      "lost_date", "not_suitable_date", "no_response_date",
+      "outcome_reason", "outcome_reason_other"
+    ],
+    lost: [
+      "won_date", "not_suitable_date", "no_response_date"
+    ],
+    not_suitable: [
+      "won_date", "lost_date", "no_response_date"
+    ],
+    no_response: [
+      "won_date", "lost_date", "not_suitable_date"
+    ]
+  };
+
+  if (updates.status !== undefined) {
+    const toClear = STATUS_FIELDS_TO_CLEAR[updates.status] || [];
+    for (const key of toClear) {
+      updates[key as keyof typeof updates] = null as any;
+    }
+  }
 
   for (const key of allowedKeys) {
     if (updates[key as keyof typeof updates] !== undefined) {
