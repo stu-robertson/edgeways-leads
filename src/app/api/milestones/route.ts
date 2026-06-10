@@ -10,38 +10,44 @@ export async function GET() {
     const lettersDelivered = leads.filter(l => l.delivery_date !== null || l.status === 'delivered').length;
     const followUpsSent = leads.filter(l => l.follow_up_sent_date !== null || l.status === 'follow_up_sent').length;
     
-    const hasResponse = (l: any) => l.first_response_date !== null || ['responded', 'first_call', 'meeting_booked', 'meeting_completed', 'proposal_sent', 'follow_up_sent', 'won'].includes(l.status);
-    const firstEnquiry = leads.some(hasResponse) ? 1 : 0;
-    
-    const hasMeeting = (l: any) => l.meeting_booked_date !== null || l.meeting_completed_date !== null || ['meeting_booked', 'meeting_completed', 'proposal_sent', 'follow_up_sent', 'won'].includes(l.status);
-    const firstMeeting = leads.some(hasMeeting) ? 1 : 0;
-    
-    const hasProposal = (l: any) => l.proposal_sent_date !== null || ['proposal_sent', 'follow_up_sent', 'won'].includes(l.status);
-    const firstProposal = leads.some(hasProposal) ? 1 : 0;
-    
-    const firstClient = leads.some(l => l.status === 'won') ? 1 : 0;
+    const hasResponse = (l: any) => 
+      l.status !== 'not_suitable' && l.status !== 'no_response' && 
+      (l.first_response_date !== null || !['new', 'printed', 'delivered'].includes(l.status));
+      
+    const hasMeeting = (l: any) => 
+      l.status !== 'not_suitable' && l.status !== 'no_response' && 
+      (l.meeting_booked_date !== null || l.meeting_completed_date !== null || !['new', 'printed', 'delivered', 'responded', 'first_call'].includes(l.status));
+      
+    const hasProposal = (l: any) => 
+      l.status !== 'not_suitable' && l.status !== 'no_response' && 
+      (l.proposal_sent_date !== null || ['proposal_sent', 'follow_up_sent', 'won'].includes(l.status));
+      
+    const enquiries = leads.filter(hasResponse).length;
+    const meetings = leads.filter(hasMeeting).length;
+    const proposals = leads.filter(hasProposal).length;
+    const clients = leads.filter(l => l.status === 'won').length;
     const totalRevenue = leads.filter(l => l.status === 'won').reduce((sum, l) => sum + (l.offer_price || 300), 0);
     const mrr = leads.filter(l => l.status === 'won').length * 25;
 
-    const firstTradesClient = leads.some(l => l.status === 'won' && l.industry_category === 'Local Trades') ? 1 : 0;
-    const firstProfessionalServicesClient = leads.some(l => l.status === 'won' && l.industry_category === 'Professional Services') ? 1 : 0;
-    const firstSoftwareProject = leads.some(l => l.status === 'won' && l.industry_category === 'Technology') ? 1 : 0;
+    const tradesClients = leads.filter(l => l.status === 'won' && l.industry_category === 'Local Trades').length;
+    const professionalServicesClients = leads.filter(l => l.status === 'won' && l.industry_category === 'Professional Services').length;
+    const softwareProjects = leads.filter(l => l.status === 'won' && l.industry_category === 'Technology').length;
 
     const metricsMap: Record<string, number> = {
       letters_delivered: lettersDelivered,
       follow_ups_sent: followUpsSent,
-      first_enquiry: firstEnquiry,
-      first_meeting: firstMeeting,
-      first_proposal: firstProposal,
-      first_client: firstClient,
+      enquiries: enquiries,
+      meetings: meetings,
+      proposals: proposals,
+      clients: clients,
       total_revenue: totalRevenue,
       mrr: mrr,
-      first_trades_client: firstTradesClient,
-      first_professional_services_client: firstProfessionalServicesClient,
-      first_software_project: firstSoftwareProject,
+      trades_clients: tradesClients,
+      professional_services_clients: professionalServicesClients,
+      software_projects: softwareProjects,
     };
 
-    // Update milestones completion state if target is reached
+    // Update milestones completion state dynamically (including auto-revert)
     const updatedMilestones = [];
     for (const milestone of milestones) {
       const currentValue = metricsMap[milestone.metric] || 0;
@@ -51,6 +57,9 @@ export async function GET() {
         const todayStr = new Date().toISOString();
         await updateMilestone(milestone.id, todayStr, milestone.celebration_notes);
         milestone.completed_date = todayStr;
+      } else if (currentValue < milestone.target_value && milestone.completed_date) {
+        await updateMilestone(milestone.id, null, milestone.celebration_notes);
+        milestone.completed_date = null;
       }
       updatedMilestones.push(milestone);
     }

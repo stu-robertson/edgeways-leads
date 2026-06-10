@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { defaultLetterTemplate, CATEGORY_METADATA_MAP, getLetterTemplate, toProperCase, getCategoryVariant } from "@/lib/templates";
+import { MapComponent } from "@/components/MapComponent";
 
 interface WatchedLocation {
   id: string;
@@ -170,309 +171,6 @@ const renderBodyContent = (
     );
   }
   return renderParagraphs(bodyText, textClassName);
-};
-
-const MapComponent = ({ leads, onUpdateStatus, onPrintMap }: {
-  leads: Lead[];
-  onUpdateStatus: (id: string, name: string, status: Lead["status"]) => void | Promise<void>;
-  onPrintMap: () => void;
-}) => {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const leafletMapRef = useRef<any>(null);
-  const markersRef = useRef<Record<string, any>>({});
-  const [leafletLoaded, setLeafletLoaded] = useState(false);
-  const [coordinates, setCoordinates] = useState<Record<string, { lat: number; lng: number }>>({});
-  const [loadingCoords, setLoadingCoords] = useState(false);
-
-  // Load Leaflet CSS and JS dynamically
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if ((window as any).L) {
-      setLeafletLoaded(true);
-      return;
-    }
-
-    // Load CSS
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-    document.head.appendChild(link);
-
-    // Load JS
-    const script = document.createElement("script");
-    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    script.async = true;
-    script.onload = () => {
-      setLeafletLoaded(true);
-    };
-    document.head.appendChild(script);
-  }, []);
-
-  const printedLeads = leads.filter(l => l.status === "printed");
-
-  // Sort them by postcode to group nearby delivery locations
-  const sortedPrintedLeads = [...printedLeads].sort((a, b) => {
-    const pcA = (a.postcode || "").trim().toUpperCase();
-    const pcB = (b.postcode || "").trim().toUpperCase();
-    return pcA.localeCompare(pcB);
-  });
-
-  // Geocode postcodes using api.postcodes.io
-  useEffect(() => {
-    if (sortedPrintedLeads.length === 0) return;
-
-    const geocodeLeads = async () => {
-      setLoadingCoords(true);
-      const newCoords: Record<string, { lat: number; lng: number }> = { ...coordinates };
-      let changed = false;
-
-      for (const lead of sortedPrintedLeads) {
-        if (!lead.postcode) continue;
-        const cleanPostcode = lead.postcode.trim().toUpperCase().replace(/\s+/g, "");
-        if (newCoords[cleanPostcode]) continue;
-
-        try {
-          const res = await fetch(`https://api.postcodes.io/postcodes/${cleanPostcode}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.result) {
-              newCoords[cleanPostcode] = {
-                lat: data.result.latitude,
-                lng: data.result.longitude,
-              };
-              changed = true;
-            }
-          }
-        } catch (err) {
-          console.error(`Failed to geocode postcode ${cleanPostcode}:`, err);
-        }
-      }
-
-      if (changed) {
-        setCoordinates(newCoords);
-      }
-      setLoadingCoords(false);
-    };
-
-    geocodeLeads();
-  }, [leads, sortedPrintedLeads.length]);
-
-  // Build the list of items with coordinates and numbers
-  const listItems = sortedPrintedLeads.map((lead, index) => {
-    const cleanPostcode = lead.postcode?.trim().toUpperCase().replace(/\s+/g, "") || "";
-    const coords = coordinates[cleanPostcode] || null;
-    return { lead, coords, index };
-  });
-
-  const geocodedItems = listItems.filter(item => item.coords);
-
-  // Initialize and update Leaflet Map
-  useEffect(() => {
-    if (!leafletLoaded || !mapRef.current || typeof window === "undefined" || !(window as any).L) return;
-
-    // Destroy existing map instance to re-initialize cleanly
-    if (leafletMapRef.current) {
-      leafletMapRef.current.remove();
-      leafletMapRef.current = null;
-    }
-
-    const L = (window as any).L;
-
-    // Default center: Tamworth/Wilnecote area (or center of all pins)
-    let centerLat = 52.613; // Tamworth latitude
-    let centerLng = -1.683; // Tamworth longitude
-    let zoomLevel = 13;
-
-    if (geocodedItems.length > 0) {
-      const total = geocodedItems.reduce(
-        (acc, val) => ({
-          lat: acc.lat + val.coords!.lat,
-          lng: acc.lng + val.coords!.lng,
-        }),
-        { lat: 0, lng: 0 }
-      );
-      centerLat = total.lat / geocodedItems.length;
-      centerLng = total.lng / geocodedItems.length;
-      zoomLevel = geocodedItems.length === 1 ? 14 : 11;
-    }
-
-    // Initialize Leaflet Map
-    const map = L.map(mapRef.current).setView([centerLat, centerLng], zoomLevel);
-    leafletMapRef.current = map;
-
-    // Use CartoDB Positron light tiles
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: 'abcd',
-      maxZoom: 20,
-    }).addTo(map);
-
-    // Clear old markers ref
-    markersRef.current = {};
-
-    // Plot markers
-    geocodedItems.forEach(({ lead, coords, index }) => {
-      const popupContent = `
-        <div style="color: #1e293b; font-family: sans-serif; padding: 4px; min-width: 150px;">
-          <h4 style="margin: 0 0 4px 0; font-weight: bold; font-size: 13px;">${index + 1}. ${lead.name}</h4>
-          <p style="margin: 0 0 6px 0; font-size: 11px; color: #64748b;">Postcode: ${lead.postcode}</p>
-          <p style="margin: 0 0 6px 0; font-size: 10px; color: #475569; max-width: 180px;">${lead.address || ""}</p>
-          <div style="font-size: 11px; margin-top: 6px; border-top: 1px solid #e2e8f0; padding-top: 6px;">
-            <strong>Status:</strong> <span style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px;">${lead.status.toUpperCase()}</span>
-          </div>
-        </div>
-      `;
-
-      // Draw custom numbered marker using L.divIcon
-      const numIcon = L.divIcon({
-        html: `<div style="
-          background-color: #35b0f3;
-          color: #ffffff;
-          border: 2px solid #ffffff;
-          border-radius: 9999px;
-          width: 24px;
-          height: 24px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-family: sans-serif;
-          font-size: 11px;
-          font-weight: 800;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.45);
-        ">${index + 1}</div>`,
-        className: 'leaflet-number-marker',
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
-        popupAnchor: [0, -10]
-      });
-
-      const marker = L.marker([coords!.lat, coords!.lng], { icon: numIcon }).addTo(map);
-      marker.bindPopup(popupContent);
-
-      // Store reference to marker
-      markersRef.current[lead.id] = marker;
-    });
-
-    return () => {
-      if (leafletMapRef.current) {
-        leafletMapRef.current.remove();
-        leafletMapRef.current = null;
-      }
-    };
-  }, [leafletLoaded, coordinates, sortedPrintedLeads.length]);
-
-  const handleFlyTo = (item: typeof listItems[0]) => {
-    if (leafletMapRef.current && item.coords) {
-      leafletMapRef.current.setView([item.coords.lat, item.coords.lng], 15);
-      const marker = markersRef.current[item.lead.id];
-      if (marker) {
-        marker.openPopup();
-      }
-    }
-  };
-
-  return (
-    <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-6 h-[85vh] lg:h-[78vh] flex flex-col justify-between map-component-root">
-      {/* Print-only title header */}
-      <div className="hidden print-title-header mb-5 border-b border-zinc-200 pb-3">
-        <h2 className="text-lg font-bold text-zinc-800 font-sans">Delivery Route & Client List</h2>
-        <p className="text-[11px] text-zinc-500 mt-1">Postcode-sorted routing sheet for delivering welcome packages.</p>
-      </div>
-
-      <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
-        <div>
-          <h3 className="text-lg font-bold text-white tracking-tight font-sans">Monitored Clients Map & Delivery List</h3>
-          <p className="text-xs text-slate-400">Showing locations of all leads in &quot;printed&quot; status. Postcode-sorted to optimize your physical delivery route.</p>
-        </div>
-        <div className="flex gap-2 self-start sm:self-center">
-          {loadingCoords && (
-            <div className="text-[10px] text-[#35b0f3] font-semibold px-3 py-1 bg-sky-950/40 border border-sky-900/40 rounded-full animate-pulse flex items-center">
-              Geocoding postcodes...
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={onPrintMap}
-            className="bg-[#35b0f3] hover:bg-[#35b0f3]/90 text-white font-bold text-xs px-3.5 py-1.5 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-1.5"
-          >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 00-2 2h2m2 4h10a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-            </svg>
-            Print Map
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0 overflow-hidden map-content-layout">
-        {/* Numbered List of Deliveries */}
-        <div className="w-full lg:w-80 h-72 lg:h-full flex flex-col bg-slate-950/50 border border-slate-800/80 rounded-xl p-4 overflow-hidden flex-shrink-0 map-delivery-list">
-          <div className="flex justify-between items-center mb-3 flex-shrink-0 map-delivery-list-header">
-            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Delivery Route ({listItems.length})</h4>
-            <span className="text-[10px] text-slate-500 font-semibold">Postcode Ordered</span>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 delivery-list-scroll-area">
-            {listItems.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-4">
-                <svg className="h-8 w-8 text-slate-700 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-                <p className="text-xs text-slate-600 italic">No leads in &quot;printed&quot; status.</p>
-              </div>
-            ) : (
-              listItems.map((item) => (
-                <div 
-                  key={item.lead.id} 
-                  className={`bg-slate-900/40 border border-slate-850 hover:border-slate-800 rounded-xl p-3 flex gap-3 items-start transition-all duration-150 group delivery-list-card ${
-                    item.coords ? 'cursor-pointer hover:bg-slate-900/80' : 'opacity-75'
-                  }`}
-                  onClick={() => item.coords && handleFlyTo(item)}
-                  title={item.coords ? "Click to focus on map" : "Location not geocoded yet"}
-                >
-                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#35b0f3] text-white flex items-center justify-center text-xs font-black shadow-sm group-hover:scale-105 transition-transform delivery-list-badge">
-                    {item.index + 1}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <h5 className="text-xs font-bold text-white truncate leading-snug mb-1 group-hover:text-[#35b0f3] transition-colors font-sans delivery-list-title">
-                      {item.lead.name}
-                    </h5>
-                    <p className="text-[11px] text-slate-400 leading-normal line-clamp-2 font-sans delivery-list-address" title={item.lead.address || ""}>
-                      {item.lead.address || "No address details available"}
-                    </p>
-                    <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-slate-850/50 delivery-list-card-footer">
-                      <span className="text-[10px] text-slate-300 font-semibold px-2 py-0.5 bg-slate-900 border border-slate-800 rounded font-mono delivery-list-postcode">
-                        {item.lead.postcode || "N/A"}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onUpdateStatus(item.lead.id, item.lead.name, 'delivered');
-                        }}
-                        className="bg-emerald-600/15 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/20 hover:border-emerald-500 px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wide transition-all active:scale-95 cursor-pointer card-action-no-print"
-                      >
-                        ✓ Delivered
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Map Engine Area */}
-        <div className="flex-1 h-96 lg:h-full relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950 map-print-target">
-          {leafletLoaded && geocodedItems.length === 0 && (
-            <div className="absolute inset-0 z-[400] flex items-center justify-center bg-slate-950/80 text-slate-500 text-sm p-4 text-center">
-              No geocoded printed locations to plot. Ensure postcodes are valid.
-            </div>
-          )}
-          <div ref={mapRef} className="w-full h-full" style={{ minHeight: "350px" }} />
-        </div>
-      </div>
-    </div>
-  );
 };
 
 export default function Home() {
@@ -1358,13 +1056,19 @@ export default function Home() {
 
   const perfDeliveredCount = perfFilteredLeads.filter(l => l.delivery_date !== null || l.status === 'delivered').length;
   
-  const hasResponded = (l: Lead) => l.first_response_date !== null || !['new', 'printed', 'delivered'].includes(l.status);
+  const hasResponded = (l: Lead) => 
+    l.status !== 'not_suitable' && l.status !== 'no_response' && 
+    (l.first_response_date !== null || !['new', 'printed', 'delivered'].includes(l.status));
   const perfResponseCount = perfFilteredLeads.filter(hasResponded).length;
   
-  const hasBookedMeeting = (l: Lead) => l.meeting_booked_date !== null || !['new', 'printed', 'delivered', 'responded', 'first_call'].includes(l.status);
+  const hasBookedMeeting = (l: Lead) => 
+    l.status !== 'not_suitable' && l.status !== 'no_response' && 
+    (l.meeting_booked_date !== null || !['new', 'printed', 'delivered', 'responded', 'first_call'].includes(l.status));
   const perfMeetingCount = perfFilteredLeads.filter(hasBookedMeeting).length;
   
-  const hasSentProposal = (l: Lead) => l.proposal_sent_date !== null || ['proposal_sent', 'follow_up_sent', 'won'].includes(l.status);
+  const hasSentProposal = (l: Lead) => 
+    l.status !== 'not_suitable' && l.status !== 'no_response' && 
+    (l.proposal_sent_date !== null || ['proposal_sent', 'follow_up_sent', 'won'].includes(l.status));
   const perfProposalCount = perfFilteredLeads.filter(hasSentProposal).length;
   
   const perfWonCount = perfFilteredLeads.filter(l => l.status === 'won').length;
@@ -3581,15 +3285,15 @@ export default function Home() {
                 >
                   <option value="letters_delivered" className="bg-slate-900 text-slate-100">Letters Delivered</option>
                   <option value="follow_ups_sent" className="bg-slate-900 text-slate-100">Follow-ups Sent</option>
-                  <option value="first_enquiry" className="bg-slate-900 text-slate-100">First Response/Enquiry</option>
-                  <option value="first_meeting" className="bg-slate-900 text-slate-100">First Meeting Booked</option>
-                  <option value="first_proposal" className="bg-slate-900 text-slate-100">First Proposal Sent</option>
-                  <option value="first_client" className="bg-slate-900 text-slate-100">First Client Won</option>
+                  <option value="enquiries" className="bg-slate-900 text-slate-100">Total Responses/Enquiries</option>
+                  <option value="meetings" className="bg-slate-900 text-slate-100">Total Meetings Booked</option>
+                  <option value="proposals" className="bg-slate-900 text-slate-100">Total Proposals Sent</option>
+                  <option value="clients" className="bg-slate-900 text-slate-100">Total Clients Won</option>
                   <option value="total_revenue" className="bg-slate-900 text-slate-100">Total Revenue (£)</option>
                   <option value="mrr" className="bg-slate-900 text-slate-100">MRR (£)</option>
-                  <option value="first_trades_client" className="bg-slate-900 text-slate-100">First Local Trades Won</option>
-                  <option value="first_professional_services_client" className="bg-slate-900 text-slate-100">First Professional Services Won</option>
-                  <option value="first_software_project" className="bg-slate-900 text-slate-100">First Software Project Won</option>
+                  <option value="trades_clients" className="bg-slate-900 text-slate-100">Local Trades Clients Won</option>
+                  <option value="professional_services_clients" className="bg-slate-900 text-slate-100">Professional Services Clients Won</option>
+                  <option value="software_projects" className="bg-slate-900 text-slate-100">Software Projects (Technology) Won</option>
                 </select>
               </div>
 

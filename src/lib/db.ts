@@ -113,16 +113,16 @@ export async function initDb() {
     INSERT INTO milestones (id, title, type, metric, target_value, reward) VALUES
       ('letters_delivered_100', '100 Letters Delivered', 'activity', 'letters_delivered', 100, 'Team dinner'),
       ('follow_ups_sent_50', '50 Follow-ups Sent', 'activity', 'follow_ups_sent', 50, 'Friday early finish'),
-      ('first_enquiry', 'First Enquiry', 'conversion', 'first_enquiry', 1, 'Celebrate with coffee'),
-      ('first_meeting', 'First Meeting', 'conversion', 'first_meeting', 1, 'Nice lunch'),
-      ('first_proposal', 'First Proposal', 'conversion', 'first_proposal', 1, 'Team drinks'),
-      ('first_client', 'First Client', 'conversion', 'first_client', 1, 'Bottle of champagne!'),
+      ('first_enquiry', 'First Enquiry', 'conversion', 'enquiries', 1, 'Celebrate with coffee'),
+      ('first_meeting', 'First Meeting', 'conversion', 'meetings', 1, 'Nice lunch'),
+      ('first_proposal', 'First Proposal', 'conversion', 'proposals', 1, 'Team drinks'),
+      ('first_client', 'First Client', 'conversion', 'clients', 1, 'Bottle of champagne!'),
       ('total_revenue_1000', '£1,000 Total Revenue', 'revenue', 'total_revenue', 1000, 'Bonus reward'),
       ('mrr_500', '£500 Monthly Recurring Revenue', 'revenue', 'mrr', 500, 'Company celebration'),
-      ('first_trades_client', 'First Trades Client', 'category', 'first_trades_client', 1, 'Trade sector unlock reward'),
-      ('first_professional_services_client', 'First Professional Services Client', 'category', 'first_professional_services_client', 1, 'Professional sector unlock reward'),
-      ('first_software_project', 'First Software Project', 'category', 'first_software_project', 1, 'Software sector unlock reward')
-    ON CONFLICT (id) DO NOTHING;
+      ('first_trades_client', 'First Trades Client', 'category', 'trades_clients', 1, 'Trade sector unlock reward'),
+      ('first_professional_services_client', 'First Professional Services Client', 'category', 'professional_services_clients', 1, 'Professional sector unlock reward'),
+      ('first_software_project', 'First Software Project', 'category', 'software_projects', 1, 'Software sector unlock reward')
+    ON CONFLICT (id) DO UPDATE SET metric = EXCLUDED.metric;
 
     -- Enable Row Level Security (RLS) for RLS-first design / Supabase compatibility
     ALTER TABLE watched_locations ENABLE ROW LEVEL SECURITY;
