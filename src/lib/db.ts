@@ -1,5 +1,6 @@
 import { Pool } from "pg";
 import crypto from "crypto";
+import { CATEGORY_METADATA_MAP, CATEGORY_LETTER_COPY_MAP, getCategoryVariant } from "./templates";
 
 // Initialize PostgreSQL connection pool
 const connectionString = process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/edgeways_leads";
@@ -145,6 +146,30 @@ export async function initDb() {
       END IF;
     END
     $$;
+
+    CREATE TABLE IF NOT EXISTS letter_templates (
+      id TEXT PRIMARY KEY,
+      base_version TEXT NOT NULL,
+      category_variant TEXT NOT NULL,
+      pitch_title TEXT NOT NULL,
+      offer_price INTEGER NOT NULL DEFAULT 300,
+      was_price INTEGER NOT NULL DEFAULT 1200,
+      monthly_price INTEGER NOT NULL DEFAULT 25,
+      card_features JSONB NOT NULL,
+      letter_body TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    ALTER TABLE letter_templates ENABLE ROW LEVEL SECURITY;
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE tablename = 'letter_templates' AND policyname = 'allow_all_letter_templates'
+      ) THEN
+        CREATE POLICY allow_all_letter_templates ON letter_templates FOR ALL USING (true) WITH CHECK (true);
+      END IF;
+    END
+    $$;
   `);
 
   // Backfill industry_category for existing leads
@@ -231,6 +256,66 @@ export async function initDb() {
     }
   } catch (err) {
     console.error("Failed to backfill directors:", err);
+  }
+
+  // Seed letter templates if table is empty
+  try {
+    const templatesCountRes = await pool.query("SELECT COUNT(*) FROM letter_templates");
+    if (parseInt(templatesCountRes.rows[0].count, 10) === 0) {
+      console.log("Seeding default v1.0 letter templates...");
+      const categories = Object.keys(CATEGORY_METADATA_MAP);
+      for (const cat of categories) {
+        const meta = CATEGORY_METADATA_MAP[cat];
+        const copy = CATEGORY_LETTER_COPY_MAP[cat];
+        if (!meta || !copy) continue;
+
+        const variant = getCategoryVariant(cat);
+        const templateId = `v1.0_${variant}`;
+        const bodyText = `Dear {recipient_name},
+
+${copy.openingContext}
+
+My name's Stuart and I run a small software and web development business based in Wilnecote.
+
+${copy.websiteReason}
+
+To support newly registered businesses in the area, we're offering a professional website for £${meta.price} to businesses within their first three months of trading (1/4 of our normal price).
+
+Please note: To make sure every project gets the time and attention it deserves, we limit the number of these websites we take on each month.
+
+[Offer Card]
+
+The website would be professionally designed, mobile-friendly, fully managed and include a full year of hosting at no extra cost.
+
+There's no hard sell and absolutely no obligation. If you'd like to have a friendly chat about your plans, or if you think I might be able to help with your online presence or creating software for your business, feel free to call, email, or visit our website at www.edgewaysdigital.com.
+
+Either way, I wish you every success with your new business.`;
+
+        const features = [
+          "Professional website design",
+          "Fully mobile-friendly & optimized",
+          "12 months managed hosting included"
+        ];
+
+        await pool.query(`
+          INSERT INTO letter_templates (id, base_version, category_variant, pitch_title, offer_price, was_price, monthly_price, card_features, letter_body)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [
+          templateId,
+          "v1.0",
+          variant,
+          meta.pitchTitle,
+          meta.price,
+          meta.wasPrice,
+          meta.monthlyPrice,
+          JSON.stringify(features),
+          bodyText
+        ]);
+      }
+      console.log("Successfully seeded 12 letter templates.");
+    }
+  } catch (err) {
+    console.error("Failed to seed letter templates:", err);
   }
 }
 
@@ -680,6 +765,35 @@ export async function deleteMilestone(id: string): Promise<void> {
   } catch (error) {
     console.error(`Error deleting milestone ${id}:`, error);
     throw error;
+  }
+}
+
+// --- Letter Templates ---
+export interface LetterTemplate {
+  id: string;
+  base_version: string;
+  category_variant: string;
+  pitch_title: string;
+  offer_price: number;
+  was_price: number;
+  monthly_price: number;
+  card_features: string[];
+  letter_body: string;
+  created_at?: string;
+}
+
+export async function getLetterTemplates(): Promise<LetterTemplate[]> {
+  try {
+    const res = await pool.query(
+      "SELECT id, base_version, category_variant, pitch_title, offer_price, was_price, monthly_price, card_features, letter_body, created_at::text FROM letter_templates ORDER BY base_version DESC, category_variant ASC"
+    );
+    return res.rows.map(row => ({
+      ...row,
+      card_features: typeof row.card_features === "string" ? JSON.parse(row.card_features) : row.card_features
+    })) as LetterTemplate[];
+  } catch (error) {
+    console.error("Error fetching letter templates:", error);
+    return [];
   }
 }
 

@@ -200,6 +200,16 @@ export const CATEGORY_LETTER_COPY_MAP: Record<string, LetterCategoryCopy> = {
   }
 };
 
+export function getCategoryVariant(industryCategory: string | null): string {
+  if (!industryCategory) return "other_local_services";
+  return industryCategory
+    .toLowerCase()
+    .replace(/ & /g, "_and_")
+    .replace(/ \/ /g, "_or_")
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "");
+}
+
 /**
  * Converts a string to proper title case.
  * Example: "EDGEWAYS DIGITAL LIMITED" -> "Edgeways Digital Limited"

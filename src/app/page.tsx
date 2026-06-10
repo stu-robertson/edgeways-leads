@@ -1,12 +1,24 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { defaultLetterTemplate, CATEGORY_METADATA_MAP, getLetterTemplate, toProperCase } from "@/lib/templates";
+import { defaultLetterTemplate, CATEGORY_METADATA_MAP, getLetterTemplate, toProperCase, getCategoryVariant } from "@/lib/templates";
 
 interface WatchedLocation {
   id: string;
   location: string;
   created_at: string;
+}
+
+interface LetterTemplate {
+  id: string;
+  base_version: string;
+  category_variant: string;
+  pitch_title: string;
+  offer_price: number;
+  was_price: number;
+  monthly_price: number;
+  card_features: string[];
+  letter_body: string;
 }
 
 interface Lead {
@@ -90,19 +102,28 @@ const renderParagraphs = (text: string, textClassName: string) => {
   );
 };
 
-const renderBodyContent = (bodyText: string, textClassName: string, category: string | null = null) => {
+const renderBodyContent = (
+  bodyText: string,
+  textClassName: string,
+  category: string | null = null,
+  template: LetterTemplate | null = null
+) => {
   const placeholder = "[Offer Card]";
   if (bodyText.includes(placeholder)) {
     const parts = bodyText.split(placeholder);
     const intro = parts[0] || "";
     const outro = parts[1] || "";
     
-    // Fetch pricing details based on category
-    const meta = category ? CATEGORY_METADATA_MAP[category] : null;
-    const price = meta?.price || 300;
-    const wasPrice = meta?.wasPrice || 1200;
-    const monthlyPrice = meta?.monthlyPrice || 25;
-    const pitchTitle = meta?.pitchTitle || "New Business Website Offer";
+    // Fetch pricing details based on category or template
+    const price = template ? template.offer_price : (category ? CATEGORY_METADATA_MAP[category]?.price : 300) || 300;
+    const wasPrice = template ? template.was_price : (category ? CATEGORY_METADATA_MAP[category]?.wasPrice : 1200) || 1200;
+    const monthlyPrice = template ? template.monthly_price : (category ? CATEGORY_METADATA_MAP[category]?.monthlyPrice : 25) || 25;
+    const pitchTitle = template ? template.pitch_title : (category ? CATEGORY_METADATA_MAP[category]?.pitchTitle : "New Business Website Offer") || "New Business Website Offer";
+    const features = template ? template.card_features : [
+      "Professional website design",
+      "Fully mobile-friendly & optimized",
+      "12 months managed hosting included"
+    ];
     
     return (
       <div className="space-y-4">
@@ -122,18 +143,12 @@ const renderBodyContent = (bodyText: string, textClassName: string, category: st
               {pitchTitle}
             </h3>
             <ul className="space-y-1.5 text-[13px] text-zinc-700">
-              <li className="flex items-center gap-2">
-                <span className="text-[#35b0f3] font-bold text-sm">✓</span>
-                <span>Professional website design</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-[#35b0f3] font-bold text-sm">✓</span>
-                <span>Fully mobile-friendly & optimized</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-[#35b0f3] font-bold text-sm">✓</span>
-                <span>12 months managed hosting included</span>
-              </li>
+              {features.map((feature, idx) => (
+                <li key={idx} className="flex items-center gap-2">
+                  <span className="text-[#35b0f3] font-bold text-sm">✓</span>
+                  <span>{feature}</span>
+                </li>
+              ))}
             </ul>
           </div>
 
@@ -526,16 +541,41 @@ export default function Home() {
   const [letterBody, setLetterBody] = useState("");
   const [recipientGreetingName, setRecipientGreetingName] = useState("Business Owner");
   const [loadingDirector, setLoadingDirector] = useState(false);
+  const [letterTemplates, setLetterTemplates] = useState<LetterTemplate[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState("v1.0");
+
+  const getActiveTemplate = (version: string, category: string | null): LetterTemplate | null => {
+    const variant = getCategoryVariant(category);
+    let tmpl = letterTemplates.find(t => t.base_version === version && t.category_variant === variant);
+    if (!tmpl) {
+      tmpl = letterTemplates.find(t => t.base_version === version && t.category_variant === "other_local_services");
+    }
+    return tmpl || null;
+  };
 
   const handleOpenLetterGenerator = async (lead: Lead) => {
     setSelectedLetterLead(lead);
     setActivePrintType('letter');
-    setRecipientGreetingName("Business Owner");
     
-    const initialTemplate = getLetterTemplate(lead.industry_category || "", lead.name, "Business Owner");
-    setLetterBody(initialTemplate);
+    // Choose initial version: lead's saved base_version or the latest available version
+    let initialVersion = lead.base_version || "v1.0";
+    const distinctVersions = Array.from(new Set(letterTemplates.map(t => t.base_version))).sort().reverse();
+    if (distinctVersions.length > 0 && !distinctVersions.includes(initialVersion)) {
+      initialVersion = distinctVersions[0];
+    }
+    setSelectedVersion(initialVersion);
+    
+    const greeting = lead.contact_name || "Business Owner";
+    setRecipientGreetingName(greeting);
+    
+    const tmpl = getActiveTemplate(initialVersion, lead.industry_category);
+    if (tmpl) {
+      setLetterBody(tmpl.letter_body.replace(/{recipient_name}/g, greeting));
+    } else {
+      setLetterBody(getLetterTemplate(lead.industry_category || "", lead.name, greeting));
+    }
+    
     setLoadingDirector(true);
-    
     try {
       const res = await fetch(`/api/leads/officers?company_number=${lead.company_number}`);
       if (res.ok) {
@@ -545,11 +585,17 @@ export default function Home() {
           setRecipientGreetingName(name);
           
           setLetterBody(prev => {
-            const defaultWithPlaceholder = getLetterTemplate(lead.industry_category || "", lead.name, "Business Owner");
+            const tmpl2 = getActiveTemplate(initialVersion, lead.industry_category);
+            const defaultWithPlaceholder = tmpl2 
+              ? tmpl2.letter_body.replace(/{recipient_name}/g, greeting)
+              : getLetterTemplate(lead.industry_category || "", lead.name, greeting);
+              
             if (prev === defaultWithPlaceholder) {
-              return getLetterTemplate(lead.industry_category || "", lead.name, name);
+              return tmpl2
+                ? tmpl2.letter_body.replace(/{recipient_name}/g, name)
+                : getLetterTemplate(lead.industry_category || "", lead.name, name);
             }
-            return prev.replace("Dear Business Owner,", `Dear ${name},`);
+            return prev.replace(`Dear ${greeting},`, `Dear ${name},`);
           });
         }
       }
@@ -558,6 +604,56 @@ export default function Home() {
     } finally {
       setLoadingDirector(false);
     }
+  };
+
+  const handleVersionChange = (version: string) => {
+    setSelectedVersion(version);
+    if (!selectedLetterLead) return;
+    
+    const tmpl = getActiveTemplate(version, selectedLetterLead.industry_category);
+    if (tmpl) {
+      setLetterBody(tmpl.letter_body.replace(/{recipient_name}/g, recipientGreetingName));
+    } else {
+      setLetterBody(getLetterTemplate(selectedLetterLead.industry_category || "", selectedLetterLead.name, recipientGreetingName));
+    }
+  };
+
+  const handlePrintLetter = async () => {
+    if (!selectedLetterLead) return;
+
+    const variant = getCategoryVariant(selectedLetterLead.industry_category);
+    const template = getActiveTemplate(selectedVersion, selectedLetterLead.industry_category);
+    const offerPrice = template?.offer_price || 300;
+
+    try {
+      const res = await fetch("/api/leads", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedLetterLead.id,
+          status: "printed",
+          base_version: selectedVersion,
+          category_variant: variant,
+          full_template_key: `${selectedVersion}_${variant}`,
+          offer_price: offerPrice,
+          printed_date: new Date().toISOString().split("T")[0]
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to update lead status");
+      }
+
+      const updatedLead = await res.json();
+      setLeads(prev => prev.map(l => l.id === selectedLetterLead.id ? { ...l, ...updatedLead } : l));
+      fetchMilestones();
+    } catch (err: any) {
+      console.error("Failed to update lead template version on print:", err);
+      triggerAlert("Warning: Could not save template version tracking to lead.", "error");
+    }
+
+    window.print();
   };
 
   const handlePrintMap = () => {
@@ -648,12 +744,25 @@ export default function Home() {
     }
   }, [triggerAlert]);
 
+  const fetchTemplates = useCallback(async () => {
+    try {
+      const res = await fetch("/api/letter-templates");
+      if (!res.ok) throw new Error("Failed to load letter templates");
+      const data = await res.json();
+      setLetterTemplates(data);
+    } catch (err) {
+      console.error(err);
+      triggerAlert("Could not load letter templates", "error");
+    }
+  }, [triggerAlert]);
+
   // Initial load
   useEffect(() => {
     fetchLocations();
     fetchLeads();
     fetchMilestones();
-  }, [fetchLocations, fetchLeads, fetchMilestones]);
+    fetchTemplates();
+  }, [fetchLocations, fetchLeads, fetchMilestones, fetchTemplates]);
 
   // Save Phone & Email for Lead inline
   const handleSaveContactInfo = async (id: string) => {
@@ -1290,16 +1399,27 @@ export default function Home() {
   const avgDaysToWin = getAverageDays("delivery_date", "won_date");
 
   // Template variations performance breakdown
-  const templateBreakdown: Record<string, { total: number; responded: number; won: number }> = {};
+  const baseTemplateBreakdown: Record<string, { total: number; responded: number; won: number }> = {};
+  const variantTemplateBreakdown: Record<string, { total: number; responded: number; won: number }> = {};
   leads.forEach(l => {
     if (l.base_version) {
       const key = l.base_version;
-      if (!templateBreakdown[key]) {
-        templateBreakdown[key] = { total: 0, responded: 0, won: 0 };
+      if (!baseTemplateBreakdown[key]) {
+        baseTemplateBreakdown[key] = { total: 0, responded: 0, won: 0 };
       }
-      templateBreakdown[key].total++;
-      if (hasResponded(l)) templateBreakdown[key].responded++;
-      if (l.status === 'won') templateBreakdown[key].won++;
+      baseTemplateBreakdown[key].total++;
+      if (hasResponded(l)) baseTemplateBreakdown[key].responded++;
+      if (l.status === 'won') baseTemplateBreakdown[key].won++;
+    }
+
+    if (l.full_template_key) {
+      const key = l.full_template_key;
+      if (!variantTemplateBreakdown[key]) {
+        variantTemplateBreakdown[key] = { total: 0, responded: 0, won: 0 };
+      }
+      variantTemplateBreakdown[key].total++;
+      if (hasResponded(l)) variantTemplateBreakdown[key].responded++;
+      if (l.status === 'won') variantTemplateBreakdown[key].won++;
     }
   });
 
@@ -2490,39 +2610,79 @@ export default function Home() {
             {/* Performance breakdowns tables grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Template variation conversion */}
-              <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-6">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Template Variation Conversions</h3>
-                <div className="overflow-x-auto text-xs">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-800 text-slate-500">
-                        <th className="pb-3 font-semibold">Template Key</th>
-                        <th className="pb-3 font-semibold text-center">Delivered</th>
-                        <th className="pb-3 font-semibold text-center">Responded</th>
-                        <th className="pb-3 font-semibold text-center">Won</th>
-                        <th className="pb-3 font-semibold text-right">Win Rate</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.keys(templateBreakdown).length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="py-4 text-center text-slate-600 italic">No template tracking data available yet.</td>
+              <div className="space-y-6">
+                {/* Base Template Conversions */}
+                <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-6">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Base Template Conversions</h3>
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-500">
+                          <th className="pb-3 font-semibold">Template Version</th>
+                          <th className="pb-3 font-semibold text-center">Delivered</th>
+                          <th className="pb-3 font-semibold text-center">Responded</th>
+                          <th className="pb-3 font-semibold text-center">Won</th>
+                          <th className="pb-3 font-semibold text-right">Win Rate</th>
                         </tr>
-                      ) : (
-                        Object.entries(templateBreakdown).map(([key, data]) => (
-                          <tr key={key} className="border-b border-slate-850/50 hover:bg-slate-900/20">
-                            <td className="py-3 font-mono font-semibold text-indigo-400">{key}</td>
-                            <td className="py-3 text-center text-slate-300">{data.total}</td>
-                            <td className="py-3 text-center text-slate-300">{data.responded}</td>
-                            <td className="py-3 text-center text-slate-300">{data.won}</td>
-                            <td className="py-3 text-right text-emerald-400 font-bold">
-                              {data.total > 0 ? Math.round((data.won / data.total) * 100) : 0}%
-                            </td>
+                      </thead>
+                      <tbody>
+                        {Object.keys(baseTemplateBreakdown).length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="py-4 text-center text-slate-600 italic">No base template data available yet.</td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                        ) : (
+                          Object.entries(baseTemplateBreakdown).map(([key, data]) => (
+                            <tr key={key} className="border-b border-slate-850/50 hover:bg-slate-900/20">
+                              <td className="py-3 font-mono font-semibold text-indigo-400">{key}</td>
+                              <td className="py-3 text-center text-slate-300">{data.total}</td>
+                              <td className="py-3 text-center text-slate-300">{data.responded}</td>
+                              <td className="py-3 text-center text-slate-300">{data.won}</td>
+                              <td className="py-3 text-right text-emerald-400 font-bold">
+                                {data.total > 0 ? Math.round((data.won / data.total) * 100) : 0}%
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Template Variant Conversions */}
+                <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-6">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Detailed Template Variant Conversions</h3>
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-500">
+                          <th className="pb-3 font-semibold">Variant Key</th>
+                          <th className="pb-3 font-semibold text-center">Delivered</th>
+                          <th className="pb-3 font-semibold text-center">Responded</th>
+                          <th className="pb-3 font-semibold text-center">Won</th>
+                          <th className="pb-3 font-semibold text-right">Win Rate</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.keys(variantTemplateBreakdown).length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="py-4 text-center text-slate-600 italic">No variant template data available yet.</td>
+                          </tr>
+                        ) : (
+                          Object.entries(variantTemplateBreakdown).map(([key, data]) => (
+                            <tr key={key} className="border-b border-slate-850/50 hover:bg-slate-900/20">
+                              <td className="py-3 font-mono font-semibold text-indigo-400">{key}</td>
+                              <td className="py-3 text-center text-slate-300">{data.total}</td>
+                              <td className="py-3 text-center text-slate-300">{data.responded}</td>
+                              <td className="py-3 text-center text-slate-300">{data.won}</td>
+                              <td className="py-3 text-right text-emerald-400 font-bold">
+                                {data.total > 0 ? Math.round((data.won / data.total) * 100) : 0}%
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
 
@@ -2885,7 +3045,7 @@ export default function Home() {
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => window.print()}
+                  onClick={handlePrintLetter}
                   className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-md transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -2910,6 +3070,18 @@ export default function Home() {
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Letter Details</h4>
                 
                 <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="text-xs text-slate-500 font-semibold block mb-1">Letter Template Version</label>
+                    <select
+                      value={selectedVersion}
+                      onChange={e => handleVersionChange(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all cursor-pointer font-sans"
+                    >
+                      {Array.from(new Set(letterTemplates.map(t => t.base_version))).sort().reverse().map(v => (
+                        <option key={v} value={v} className="bg-slate-900 text-slate-100">{v}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div>
                     <label className="text-xs text-slate-500 font-semibold block mb-1">Your Name</label>
                     <input
@@ -3026,7 +3198,7 @@ export default function Home() {
                   </div>
 
                   {/* Letter Content */}
-                  {renderBodyContent(letterBody, "text-[#27272a] text-[13.5px] leading-relaxed", selectedLetterLead.industry_category)}
+                  {renderBodyContent(letterBody, "text-[#27272a] text-[13.5px] leading-relaxed", selectedLetterLead.industry_category, getActiveTemplate(selectedVersion, selectedLetterLead.industry_category))}
 
                   {/* Signature */}
                   <div className="mt-6 text-xs text-zinc-500 leading-relaxed">
@@ -3091,7 +3263,7 @@ export default function Home() {
               </div>
 
               {/* Letter Content */}
-              {renderBodyContent(letterBody, "text-[#27272a] text-[14px] leading-relaxed", selectedLetterLead.industry_category)}
+              {renderBodyContent(letterBody, "text-[#27272a] text-[14px] leading-relaxed", selectedLetterLead.industry_category, getActiveTemplate(selectedVersion, selectedLetterLead.industry_category))}
 
               {/* Signature */}
               <div className="mt-6 text-xs text-zinc-500 leading-relaxed">
@@ -3101,14 +3273,16 @@ export default function Home() {
               </div>
 
               {/* Footer info */}
-              <div className="mt-8 pt-4 border-t border-zinc-150 text-[10px] text-zinc-455 font-sans tracking-wide text-center space-y-1.5">
-                <div>74 Broadlee, Wilnecote, Tamworth, B77 4PG</div>
-                <div className="text-zinc-500 flex justify-center gap-3 text-[9px]">
-                  <span>{senderPhone}</span>
-                  <span>&bull;</span>
-                  <span>{senderEmail}</span>
-                  <span>&bull;</span>
-                  <span>{senderWebsite}</span>
+              <div className="mt-8 pt-4 border-t border-zinc-200 text-center">
+                <div className="text-xs text-slate-500 mb-2">
+                  74 Broadlee, Wilnecote, Tamworth, B77 4PG
+                </div>
+
+                <div className="text-sm text-slate-700">
+                  <div>{senderPhone}</div>
+                  <div>
+                    {senderEmail} • {senderWebsite}
+                  </div>
                 </div>
               </div>
             </div>
